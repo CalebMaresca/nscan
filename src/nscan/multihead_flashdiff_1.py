@@ -19,20 +19,6 @@ except ModuleNotFoundError:
     from .rms_norm import RMSNorm
 
 
-def init_method(tensor, **kwargs):
-    nn.init.kaiming_uniform_(tensor, a=math.sqrt(5))
-
-def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
-    """torch.repeat_interleave(x, dim=1, repeats=n_rep)"""
-    bs, n_kv_heads, slen, head_dim = x.shape
-    if n_rep == 1:
-        return x
-    return (
-        x[:, :, None, :, :]
-        .expand(bs, n_kv_heads, n_rep, slen, head_dim)
-        .reshape(bs, n_kv_heads * n_rep, slen, head_dim)
-    )
-
 def lambda_init_fn(depth):
     return 0.8 - 0.6 * math.exp(-0.3 * depth)
 
@@ -74,7 +60,6 @@ class MultiheadFlashDiff1(nn.Module):
         x,
         encoder_out=None,
         rel_pos=None,
-        attn_mask=None,
     ):
         bsz, tgt_len, embed_dim = x.size()
         

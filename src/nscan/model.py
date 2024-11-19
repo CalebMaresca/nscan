@@ -9,7 +9,7 @@ from .rms_norm import RMSNorm
 
 
 class StockSelectionHead(nn.Module):
-    """Selects top k stocks most relevant to the input text."""
+    """Assigns logits to each stock based on relevance to the input text."""
     def __init__(self, d_model: int, hidden_dim: int, num_stocks: int):
         super().__init__()
         self.linear1 = nn.Linear(d_model, hidden_dim)
@@ -30,23 +30,21 @@ class StockSelectionHead(nn.Module):
 
 class CustomDecoderLayer(nn.Module):
     """Modified transformer decoder layer with cross-attention before self-attention."""
-    def __init__(self, hidden_dim: int, num_heads: int, dropout: float = 0.1):
+    def __init__(self, hidden_dim: int, num_heads: int, depth: int, dropout: float = 0.1):
         super().__init__()
         
         # Cross attention (to attend to encoded text)
-        self.cross_attention = nn.MultiheadAttention(
+        self.cross_attention = MultiheadFlashDiff1(
             embed_dim=hidden_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+            depth=depth,
+            num_heads=num_heads
         )
         
         # Non-causal self attention (stocks attending to each other)
-        self.self_attention = nn.MultiheadAttention(
+        self.self_attention = MultiheadFlashDiff1(
             embed_dim=hidden_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True
+            depth=depth,
+            num_heads=num_heads
         )
         
         # Feed forward network
