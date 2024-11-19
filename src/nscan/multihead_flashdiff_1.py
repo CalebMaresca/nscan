@@ -1,6 +1,6 @@
 """
 This implementation is based on the Differential Transformer paper and code:
-https://github.com/microsoft/unilm/tree/master/diff-transformer
+https://github.com/microsoft/unilm/tree/master/Diff-Transformer
 Authors: Tianzhu Ye, Li Dong, Yuqing Xia, Yutao Sun, Yi Zhu, Gao Huang, Furu Wei
 License: MIT License (MIT)
 """
@@ -45,25 +45,20 @@ class MultiheadFlashDiff1(nn.Module):
     """
     def __init__(
         self,
-        args,
         embed_dim,
         depth,
         num_heads,
     ):
         super().__init__()
-        self.args = args
         self.embed_dim = embed_dim
-        # num_heads set to half of Transformer's #heads
-        self.num_heads = num_heads // args.model_parallel_size
-        self.num_kv_heads = args.decoder_kv_attention_heads // args.model_parallel_size if args.decoder_kv_attention_heads is not None else num_heads // args.model_parallel_size
-        self.n_rep = self.num_heads // self.num_kv_heads
+        self.num_heads = num_heads
         
         self.head_dim = embed_dim // num_heads // 2
         self.scaling = self.head_dim ** -0.5
         
         self.q_proj = nn.Linear(embed_dim, embed_dim, bias=False)
-        self.k_proj = nn.Linear(embed_dim, embed_dim // self.n_rep, bias=False)
-        self.v_proj = nn.Linear(embed_dim, embed_dim // self.n_rep, bias=False)
+        self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
+        self.v_proj = nn.Linear(embed_dim, embed_dim, bias=False)
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias=False)
 
         self.lambda_init = lambda_init_fn(depth)
@@ -77,30 +72,42 @@ class MultiheadFlashDiff1(nn.Module):
     def forward(
         self,
         x,
-        rel_pos,
+        encoder_out=None,
+        rel_pos=None,
         attn_mask=None,
     ):
         bsz, tgt_len, embed_dim = x.size()
-        src_len = tgt_len
-
-        q = self.q_proj(x)
-        k = self.k_proj(x)
-        v = self.v_proj(x)
+        
+        # For cross-attention, use encoder_out length as source length
+        if encoder_out is not None:
+            src_len = encoder_out.size(1)
+            # Project decoder input (x) to queries
+            q = self.q_proj(x)
+            # Project encoder output to keys and values
+            k = self.k_proj(encoder_out)
+            v = self.v_proj(encoder_out)
+        else:
+            # Original self-attention case
+            src_len = tgt_len
+            q = self.q_proj(x)
+            k = self.k_proj(x)
+            v = self.v_proj(x)
 
         q = q.view(bsz, tgt_len, 2 * self.num_heads, self.head_dim)
-        k = k.view(bsz, src_len, 2 * self.num_kv_heads, self.head_dim)
-        v = v.view(bsz, src_len, self.num_kv_heads, 2 * self.head_dim)
+        k = k.view(bsz, src_len, 2 * self.num_heads, self.head_dim)
+        v = v.view(bsz, src_len, self.num_heads, 2 * self.head_dim)
 
-        q = apply_rotary_emb(q, *rel_pos, interleaved=True)
-        k = apply_rotary_emb(k, *rel_pos, interleaved=True)
+        if rel_pos is not None:
+            q = apply_rotary_emb(q, *rel_pos, interleaved=True)
+            k = apply_rotary_emb(k, *rel_pos, interleaved=True)
 
         offset = src_len - tgt_len
         q = q.reshape(bsz, tgt_len, self.num_heads, 2, self.head_dim)
-        k = k.reshape(bsz, src_len, self.num_kv_heads, 2, self.head_dim)
+        k = k.reshape(bsz, src_len, self.num_heads, 2, self.head_dim)
         q1, q2 = q[:, :, :, 0], q[:, :, :, 1]
         k1, k2 = k[:, :, :, 0], k[:, :, :, 1]
-        attn1 = flash_attn_func(q1, k1, v, causal=True)
-        attn2 = flash_attn_func(q2, k2, v, causal=True)
+        attn1 = flash_attn_func(q1, k1, v, causal=False)
+        attn2 = flash_attn_func(q2, k2, v, causal=False)
         
         lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(q)
         lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(q)
