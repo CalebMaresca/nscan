@@ -1,11 +1,8 @@
 import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModel
-from typing import Optional, Tuple
+from typing import Tuple
 from .multihead_flashdiff_1 import MultiheadFlashDiff1
-from .rms_norm import RMSNorm
-
-#TODO switch to diff-attention, properly implement cross-attention
 
 
 class StockSelectionHead(nn.Module):
@@ -30,7 +27,7 @@ class StockSelectionHead(nn.Module):
 
 class CustomDecoderLayer(nn.Module):
     """Modified transformer decoder layer with cross-attention before self-attention."""
-    def __init__(self, hidden_dim: int, num_heads: int, depth: int, dropout: float = 0.1):
+    def __init__(self, hidden_dim: int, num_heads: int, depth: int, attn_dropout: float = 0.1, ff_dropout: float = 0.1):
         super().__init__()
         
         # Cross attention (to attend to encoded text)
@@ -59,55 +56,45 @@ class CustomDecoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(hidden_dim)
         self.norm3 = nn.LayerNorm(hidden_dim)
         
-        self.dropout = nn.Dropout(dropout)
+        self.ff_dropout = nn.Dropout(ff_dropout)
+        self.attn_dropout = nn.Dropout(attn_dropout)
         
     def forward(
         self,
         x: torch.Tensor,
-        encoder_output: torch.Tensor,
-        self_attn_mask: Optional[torch.Tensor] = None,
-        cross_attn_mask: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        encoder_output: torch.Tensor
+    ) -> torch.Tensor:
         """
         Args:
             x: Stock embeddings (batch_size, num_selected_stocks, hidden_dim)
             encoder_output: Encoded text (batch_size, seq_length, hidden_dim)
-            self_attn_mask: Optional mask for self attention
-            cross_attn_mask: Optional mask for cross attention
             
         Returns:
             output: Processed stock embeddings
-            self_attn_weights: Self attention weights
-            cross_attn_weights: Cross attention weights
         """
         # Cross attention first
         residual = x
         x = self.norm1(x)
-        cross_attn_output, cross_attn_weights = self.cross_attention(
-            query=x,
-            key=encoder_output,
-            value=encoder_output,
-            attn_mask=cross_attn_mask
+        cross_attn_output = self.cross_attention(
+            x=x,
+            encoder_out=encoder_output
         )
-        x = residual + self.dropout(cross_attn_output)
+        x = residual + self.attn_dropout(cross_attn_output)
         
         # Then self attention
         residual = x
         x = self.norm2(x)
-        self_attn_output, self_attn_weights = self.self_attention(
-            query=x,
-            key=x,
-            value=x,
-            attn_mask=self_attn_mask
+        self_attn_output = self.self_attention(
+            x=x
         )
-        x = residual + self.dropout(self_attn_output)
+        x = residual + self.attn_dropout(self_attn_output)
         
         # Finally feed forward
         residual = x
         x = self.norm3(x)
-        x = residual + self.dropout(self.feed_forward(x))
+        x = residual + self.ff_dropout(self.feed_forward(x))
         
-        return x, self_attn_weights, cross_attn_weights
+        return x
 
 class StockDecoder(nn.Module):
     """Full decoder with multiple layers."""
@@ -116,21 +103,20 @@ class StockDecoder(nn.Module):
         num_layers: int,
         hidden_dim: int,
         num_heads: int,
-        dropout: float = 0.1
+        attn_dropout: float = 0.1,
+        ff_dropout: float = 0.1
     ):
         super().__init__()
         self.layers = nn.ModuleList([
-            CustomDecoderLayer(hidden_dim, num_heads, dropout)
-            for _ in range(num_layers)
+            CustomDecoderLayer(hidden_dim, num_heads, depth=i, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
+            for i in range(num_layers)
         ])
         
     def forward(
         self,
         x: torch.Tensor,
-        encoder_output: torch.Tensor,
-        self_attn_mask: Optional[torch.Tensor] = None,
-        cross_attn_mask: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        encoder_output: torch.Tensor
+    ) -> torch.Tensor:
         """
         Args:
             x: Stock embeddings (batch_size, num_selected_stocks, hidden_dim)
@@ -140,14 +126,12 @@ class StockDecoder(nn.Module):
             
         Returns:
             output: Final stock embeddings
-            self_attn_weights: Self attention weights from final layer
-            cross_attn_weights: Cross attention weights from final layer
         """
         for layer in self.layers:
-            x, self_attn_weights, cross_attn_weights = layer(
-                x, encoder_output, self_attn_mask, cross_attn_mask
+            x = layer(
+                x, encoder_output
             )
-        return x, self_attn_weights, cross_attn_weights
+        return x
 
 class MultiStockPredictor(nn.Module):
     """Complete model combining encoder, stock selection, and decoder."""
@@ -156,7 +140,8 @@ class MultiStockPredictor(nn.Module):
         num_stocks: int,
         num_decoder_layers: int,
         num_heads: int,
-        dropout: float = 0.1,
+        attn_dropout: float = 0.1,
+        ff_dropout: float = 0.1,
         encoder_name: str = "FinText/FinText-Base-2007"
     ):
         super().__init__()
@@ -181,17 +166,26 @@ class MultiStockPredictor(nn.Module):
             num_layers=num_decoder_layers,
             hidden_dim=hidden_dim,
             num_heads=num_heads,
-            dropout=dropout
+            attn_dropout=attn_dropout,
+            ff_dropout=ff_dropout
         )
         
-        # Final prediction head
-        self.predictor = nn.Linear(hidden_dim, 1)  # Predicts return for each stock
+                # Final prediction head
+        self.predictor = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim * 4),
+            nn.GELU(),
+            nn.Dropout(ff_dropout),
+            nn.Linear(hidden_dim * 4, hidden_dim * 4),
+            nn.GELU(),
+            nn.Dropout(ff_dropout),
+            nn.Linear(hidden_dim * 4, 1)
+        )  # Predicts return for each stock
         
     def forward(
         self,
         input: dict[str, torch.Tensor],  # Output from tokenizer
         k: int  # Number of stocks to select
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             input_ids: Input token ids (batch_size, seq_length)
@@ -201,8 +195,6 @@ class MultiStockPredictor(nn.Module):
         Returns:
             predictions: Predicted returns for selected stocks
             stock_logits: Logits for stock selection
-            self_attn_weights: Self attention weights from final decoder layer
-            cross_attn_weights: Cross attention weights from final decoder layer
         """
         # Encode text
         encoder_output = self.encoder(**input).last_hidden_state
@@ -218,7 +210,7 @@ class MultiStockPredictor(nn.Module):
         stock_embeddings = self.stock_embeddings(top_k_indices)  # (batch_size, k, hidden_dim)
         
         # Pass through decoder
-        decoded_stocks, self_attn_weights, cross_attn_weights = self.decoder(
+        decoded_stocks = self.decoder(
             stock_embeddings,
             encoder_output
         )
@@ -226,4 +218,4 @@ class MultiStockPredictor(nn.Module):
         # Predict returns
         predictions = self.predictor(decoded_stocks).squeeze(-1)  # (batch_size, k)
         
-        return predictions, stock_logits, self_attn_weights, cross_attn_weights
+        return predictions, stock_logits

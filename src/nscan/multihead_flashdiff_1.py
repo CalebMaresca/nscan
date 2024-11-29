@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .kernel.rotary import apply_rotary_emb
+# from .kernel.rotary import apply_rotary_emb
 from flash_attn import flash_attn_func
 try:
     from apex.normalization import FusedRMSNorm as RMSNorm 
@@ -82,9 +82,9 @@ class MultiheadFlashDiff1(nn.Module):
         k = k.view(bsz, src_len, 2 * self.num_heads, self.head_dim)
         v = v.view(bsz, src_len, self.num_heads, 2 * self.head_dim)
 
-        if rel_pos is not None:
-            q = apply_rotary_emb(q, *rel_pos, interleaved=True)
-            k = apply_rotary_emb(k, *rel_pos, interleaved=True)
+        # if rel_pos is not None:
+        #     q = apply_rotary_emb(q, *rel_pos, interleaved=True)
+        #     k = apply_rotary_emb(k, *rel_pos, interleaved=True)
 
         offset = src_len - tgt_len
         q = q.reshape(bsz, tgt_len, self.num_heads, 2, self.head_dim)
