@@ -38,5 +38,5 @@ def analyze_model(model):
     print(f"{'Total':<20} {total_params:<15,d} {total_size:.2f}")
 
 # Usage example:
-model = MultiStockPredictor(num_stocks=500, num_decoder_layers=3, num_heads=8)
+model = MultiStockPredictor(num_stocks=500, num_decoder_layers=3, num_heads=4)
 analyze_model(model)
