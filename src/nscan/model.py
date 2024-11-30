@@ -2,16 +2,16 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModel
 from typing import Tuple
-from .multihead_flashdiff_1 import MultiheadFlashDiff1
+from .multihead_flashdiff_2 import MultiheadFlashDiff2
 
 
 class StockSelectionHead(nn.Module):
     """Assigns logits to each stock based on relevance to the input text."""
-    def __init__(self, d_model: int, hidden_dim: int, num_stocks: int):
+    def __init__(self, hidden_dim: int, num_stocks: int):
         super().__init__()
-        self.linear1 = nn.Linear(d_model, hidden_dim)
+        self.linear1 = nn.Linear(hidden_dim, 4 * hidden_dim)
         self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(hidden_dim, num_stocks)
+        self.linear2 = nn.Linear(4 * hidden_dim, num_stocks)
         
     def forward(self, cls_token: torch.Tensor) -> torch.Tensor:
         """
@@ -31,14 +31,14 @@ class CustomDecoderLayer(nn.Module):
         super().__init__()
         
         # Cross attention (to attend to encoded text)
-        self.cross_attention = MultiheadFlashDiff1(
+        self.cross_attention = MultiheadFlashDiff2(
             embed_dim=hidden_dim,
             depth=depth,
             num_heads=num_heads
         )
         
         # Non-causal self attention (stocks attending to each other)
-        self.self_attention = MultiheadFlashDiff1(
+        self.self_attention = MultiheadFlashDiff2(
             embed_dim=hidden_dim,
             depth=depth,
             num_heads=num_heads
