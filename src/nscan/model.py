@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoModel #, AutoTokenizer
 from typing import Tuple
 from .multihead_flashdiff_2 import MultiheadFlashDiff2
 
@@ -121,8 +121,6 @@ class StockDecoder(nn.Module):
         Args:
             x: Stock embeddings (batch_size, num_selected_stocks, hidden_dim)
             encoder_output: Encoded text (batch_size, seq_length, hidden_dim)
-            self_attn_mask: Optional mask for self attention
-            cross_attn_mask: Optional mask for cross attention
             
         Returns:
             output: Final stock embeddings
@@ -146,8 +144,8 @@ class MultiStockPredictor(nn.Module):
     ):
         super().__init__()
         
-        # Load pretrained encoder and tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(encoder_name)
+        # Load pretrained encoder
+        #self.tokenizer = AutoTokenizer.from_pretrained(encoder_name)
         self.encoder = AutoModel.from_pretrained(encoder_name)
         hidden_dim = self.encoder.config.hidden_size
         
@@ -189,7 +187,6 @@ class MultiStockPredictor(nn.Module):
         """
         Args:
             input_ids: Input token ids (batch_size, seq_length)
-            attention_mask: Attention mask for input (batch_size, seq_length)
             k: Number of stocks to select and predict
             
         Returns:
