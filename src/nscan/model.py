@@ -131,6 +131,25 @@ class StockDecoder(nn.Module):
             )
         return x
 
+def create_predictor(input_dim: int, num_layers: int, ff_dropout: float) -> nn.Sequential:
+            layers = []
+            # First layer
+            layers.extend([
+                nn.Linear(input_dim, 4 * input_dim),
+                nn.GELU(),
+                nn.Dropout(ff_dropout)
+            ])
+            # Middle layers
+            for _ in range(num_layers - 2):
+                layers.extend([
+                    nn.Linear(4 * input_dim, 4 * input_dim),
+                    nn.GELU(),
+                    nn.Dropout(ff_dropout)
+                ])
+            # Final layer
+            layers.append(nn.Linear(4 * input_dim, 1))
+            return nn.Sequential(*layers)
+
 class MultiStockPredictor(nn.Module):
     """Complete model combining encoder, stock selection, and decoder."""
     def __init__(
@@ -138,6 +157,7 @@ class MultiStockPredictor(nn.Module):
         num_stocks: int,
         num_decoder_layers: int,
         num_heads: int,
+        num_pred_layers: int,
         attn_dropout: float = 0.1,
         ff_dropout: float = 0.1,
         encoder_name: str = "FinText/FinText-Base-2007"
@@ -168,16 +188,12 @@ class MultiStockPredictor(nn.Module):
             ff_dropout=ff_dropout
         )
         
-                # Final prediction head
-        self.predictor = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim * 4),
-            nn.GELU(),
-            nn.Dropout(ff_dropout),
-            nn.Linear(hidden_dim * 4, hidden_dim * 4),
-            nn.GELU(),
-            nn.Dropout(ff_dropout),
-            nn.Linear(hidden_dim * 4, 1)
-        )  # Predicts return for each stock
+        # Return prediction head
+        self.return_predictor = create_predictor(
+            input_dim=hidden_dim,
+            num_layers=num_pred_layers,
+            ff_dropout=ff_dropout
+        )
         
     def forward(
         self,
@@ -216,3 +232,108 @@ class MultiStockPredictor(nn.Module):
         predictions = self.predictor(decoded_stocks).squeeze(-1)  # (batch_size, k)
         
         return predictions, stock_logits
+
+
+
+
+
+class MultiStockPredictorWithConfidence(nn.Module):
+    """Model that predicts returns for all stocks along with confidence scores."""
+    def __init__(
+        self,
+        num_stocks: int,
+        num_decoder_layers: int,
+        num_heads: int,
+        num_pred_layers: int,
+        attn_dropout: float = 0.1,
+        ff_dropout: float = 0.1,
+        encoder_name: str = "FinText/FinText-Base-2007"
+    ):
+        super().__init__()
+        
+        # Load pretrained encoder
+        self.encoder = AutoModel.from_pretrained(encoder_name)
+        hidden_dim = self.encoder.config.hidden_size
+        
+        # Freeze encoder weights
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+            
+        # Stock embedding layer (convert stock indices to embeddings)
+        self.stock_embeddings = nn.Embedding(num_stocks, hidden_dim)
+        
+        # Decoder
+        self.decoder = StockDecoder(
+            num_layers=num_decoder_layers,
+            hidden_dim=hidden_dim,
+            num_heads=num_heads,
+            attn_dropout=attn_dropout,
+            ff_dropout=ff_dropout
+        )
+        
+        # Return prediction head
+        self.return_predictor = create_predictor(
+            input_dim=hidden_dim,
+            num_layers=num_pred_layers,
+            ff_dropout=ff_dropout
+        )
+        
+        # Confidence prediction head
+        self.confidence_predictor = create_predictor(
+            input_dim=hidden_dim,
+            num_layers=num_pred_layers,
+            ff_dropout=ff_dropout
+        )
+        
+    def forward(
+        self,
+        input: dict[str, torch.Tensor],  # Output from tokenizer
+        stock_indices: torch.Tensor,  # Shape: (batch_size, num_stocks_per_date)
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            input_ids: Input token ids (batch_size, seq_length)
+            
+        Returns:
+            predictions: Predicted returns for all stocks (batch_size, num_stocks)
+            confidences: Confidence scores for all stocks (batch_size, num_stocks)
+        """
+        
+        # Get stock embeddings for the valid stocks
+        stock_embeddings = self.stock_embeddings(stock_indices)  # (batch_size, num_stocks_per_date, hidden_dim)
+
+        # Encode text
+        encoder_output = self.encoder(**input).last_hidden_state
+        
+        # Pass through decoder
+        decoded_stocks = self.decoder(
+            stock_embeddings,
+            encoder_output
+        )
+        
+        # Predict returns and confidences
+        predictions = self.return_predictor(decoded_stocks).squeeze(-1)  # (batch_size, num_stocks)
+        confidence_logits = self.confidence_predictor(decoded_stocks).squeeze(-1)  # (batch_size, num_stocks)
+        
+        # Normalize confidence scores using softmax
+        confidences = torch.softmax(confidence_logits, dim=-1)
+        
+        return predictions, confidences
+
+def confidence_weighted_loss(predictions: torch.Tensor, 
+                           targets: torch.Tensor, 
+                           confidences: torch.Tensor) -> torch.Tensor:
+    """
+    Compute confidence-weighted MSE loss.
+    
+    Args:
+        predictions: Predicted returns (batch_size, num_stocks)
+        targets: Actual returns (batch_size, num_stocks)
+        confidences: Confidence scores (batch_size, num_stocks)
+    
+    Returns:
+        loss: Weighted MSE loss
+    """
+    squared_errors = (predictions - targets) ** 2
+    weighted_errors = squared_errors * confidences
+    return weighted_errors.sum() / confidences.sum()
