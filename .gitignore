@@ -33,6 +33,7 @@ env/
 # Project specific
 data/raw/*
 !data/raw/.gitkeep
+data/returns/*
 *.pth
 *.ckpt
 
