@@ -13,7 +13,7 @@ from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.air.integrations.wandb import WandbLoggerCallback
-from .model import MultiStockPredictorWithConfidence, confidence_weighted_loss
+from src.nscan.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 
 # Get the NYSE calendar
 nyse = xcals.get_calendar("XNYS")
