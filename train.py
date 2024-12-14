@@ -416,6 +416,8 @@ if __name__ == "__main__":
 
     # Initialize ASHA scheduler
     scheduler = ASHAScheduler(
+        metric="val_loss",
+        mode="min",
         max_t=10,  # Max epochs
         grace_period=2,  # Min epochs before pruning
         reduction_factor=2
