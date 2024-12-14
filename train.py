@@ -12,25 +12,22 @@ import exchange_calendars as xcals
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
-from ray.tune.integration.wandb import WandbLoggerCallback
+from ray.air.integrations.wandb import WandbLoggerCallback
 from .model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 
 # Get the NYSE calendar
 nyse = xcals.get_calendar("XNYS")
 
 def get_next_trading_day(start_date):
-    current_date = start_date
-
-    # Iterate a day forward(to prevent staying on same Monday each iteration)
-    current_date += timedelta(days=1)
-    # Move to next Monday
-    while current_date.weekday() != 0:
-        current_date += timedelta(days=1)
-        
-    # Move to next trading day
+    if not isinstance(start_date, datetime):
+        start_date = datetime.strptime(start_date, '%Y-%m-%d')
+    
+    current_date = start_date + timedelta(days=1)  # Start with next day
+    
+    # Keep moving forward until we find a trading day
     while not nyse.is_session(current_date.strftime('%Y-%m-%d')):
         current_date += timedelta(days=1)
-        
+    
     return current_date.strftime('%Y-%m-%d')
 
 def load_data(years):
