@@ -37,13 +37,19 @@ def load_data(years):
     
     for year in years:
         # Load returns DataFrame for this year
-        returns_df = pd.read_csv(f"data/returns/{year}_returns.csv")
-        returns_df.set_index('Date', inplace=True)
+        df = pd.read_csv(f"data/returns/{year}_returns.csv")
+        
+        # Pivot the data to get dates as rows and PERMNOs as columns
+        returns_df = df.pivot(
+            index='DlyCalDt', 
+            columns='PERMNO', 
+            values='DlyRet'
+        ).sort_index(axis=1)  # Sort columns (PERMNOs)
         returns_by_year[year] = returns_df
         
-        # Get SP500 symbols for this year
-        sp500_by_year[year] = list(returns_df.columns)
-    
+        # Get unique sorted PERMNOs for this year
+        sp500_by_year[year] = sorted(df['PERMNO'].unique().tolist())
+        
     return returns_by_year, sp500_by_year
 
 class NewsReturnDataset(torch.utils.data.Dataset):
@@ -61,10 +67,7 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         self.tokenizer = tokenizer
         
         # Create master list of all unique stocks across all years
-        all_stocks = set()
-        for symbols in sp500_by_year.values():
-            all_stocks.update(symbols)
-        self.all_stocks = sorted(list(all_stocks))  # Sort for consistent indexing
+        self.all_stocks = sorted(list(set().union(*sp500_by_year.values())))
         
         # Create mapping from symbol to master index
         self.symbol_to_idx = {symbol: idx for idx, symbol in enumerate(self.all_stocks)}
