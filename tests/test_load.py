@@ -2,12 +2,46 @@ import torch
 from transformers import AutoTokenizer, AutoModel
 from datasets import load_dataset
 import pandas as pd
+import matplotlib.pyplot as plt
 
 def test_pipeline():
     # 1. Load FNSPID dataset
     print("Loading FNSPID dataset...")
     try:
-        dataset = load_dataset("sabareesh88/FNSPID_nasdaq_sorted", split="train[:100]")
+        dataset = load_dataset("csv", data_files="data/raw/FNSPID-date-corrected.csv", split="train")
+
+        # non_empty_count = len(dataset.filter(lambda x: x['Article'] != "" and x['Article'] is not None))
+        # print(f"Number of non-empty articles: {non_empty_count}")
+        # print(f"Total number of articles: {len(dataset)}")
+        # print(f"Percentage non-empty: {(non_empty_count/len(dataset))*100:.2f}%")
+
+        # Chunked pandas approach for year counting
+        year_counts = pd.Series(dtype=int)  # Initialize empty series
+        chunk_size = 100000 # Adjust based on memory and performance
+
+        print("Counting articles by year...")
+        for i, chunk in enumerate(pd.read_csv("data/raw/FNSPID-date-corrected.csv", chunksize=chunk_size)):
+            # Process each chunk
+            chunk_counts = chunk['Date'].str[:4].value_counts()
+            year_counts = year_counts.add(chunk_counts, fill_value=0)
+            
+            # Print progress
+            rows_processed = (i + 1) * chunk_size
+            print(f"Processed {rows_processed:,} rows...", end='\r')
+
+        year_counts = year_counts.sort_index()
+        print("\nDone!")
+        print("\nYear counts:")
+        print(year_counts)
+
+        year_counts.plot(kind='bar')
+        plt.title('Number of Articles by Year')
+        plt.xlabel('Year')
+        plt.ylabel('Number of Articles')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+
         print("\nDataset sample:")
         print(dataset[0])  # Let's see what fields we have
     except Exception as e:
