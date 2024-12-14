@@ -5,15 +5,33 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from datasets import load_dataset
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List
 import pandas as pd
+import exchange_calendars as xcals
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.tune.integration.wandb import WandbLoggerCallback
 from .model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 
+# Get the NYSE calendar
+nyse = xcals.get_calendar("XNYS")
+
+def get_next_trading_day(start_date):
+    current_date = start_date
+
+    # Iterate a day forward(to prevent staying on same Monday each iteration)
+    current_date += timedelta(days=1)
+    # Move to next Monday
+    while current_date.weekday() != 0:
+        current_date += timedelta(days=1)
+        
+    # Move to next trading day
+    while not nyse.is_session(current_date.strftime('%Y-%m-%d')):
+        current_date += timedelta(days=1)
+        
+    return current_date.strftime('%Y-%m-%d')
 
 def load_data(years):
     # Load returns data by year
@@ -209,6 +227,7 @@ class Trainer:
         )
         self.scaler = GradScaler()
 
+        self.num_epochs = config["num_epochs"]
         self.validation_freq = config["validation_freq"]
 
         # Load checkpoint if provided
@@ -303,11 +322,11 @@ class Trainer:
         
         return total_loss / len(self.val_loader)
     
-    def train(self, num_epochs: int):
+    def train(self):
         best_val_loss = float('inf')
         self.current_epoch = 0
         
-        for epoch in range(num_epochs):
+        for epoch in range(self.num_epochs):
             self.current_epoch = epoch
             start_time = datetime.now()
 
@@ -328,7 +347,7 @@ class Trainer:
                 epoch=epoch + 1
             )
 
-            print(f"Epoch {epoch+1}/{num_epochs}")
+            print(f"Epoch {epoch+1}/{self.num_epochs}")
             print(f"Time: {datetime.now() - start_time}")
             print(f"Train Loss: {train_loss:.4f}")
             print(f"Val Loss: {val_loss:.4f}")
