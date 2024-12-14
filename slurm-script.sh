@@ -16,7 +16,7 @@ echo "Running on node: $SLURMD_NODENAME"
 echo "Start time: $(date)"
 
 singularity exec --nv \
-    --overlay overlay-25GB-500K.ext3:rw \
+    --overlay $SCRATCH/DL_Systems/project/overlay-25GB-500K.ext3:r \
     /scratch/work/public/singularity/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif \
     /bin/bash << 'ENDOFCOMMANDS'
 
@@ -25,14 +25,14 @@ source /ext3/env.sh
 conda activate py311
 
 # Set up wandb API key
-export WANDB_API_KEY=$(cat ~/.wandb_key)
+export WANDB_API_KEY=$(cat $SCRATCH/DL_Systems/project/.wandb_key)
 
 # Create a directory for this run
-RUN_DIR="~/stock_pred_runs/$SLURM_JOB_ID"
+RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
 # Run the training script and save the dashboard port
-python train.py 2>&1 | tee $RUN_DIR/train.log
+python $HOME/DL_Systems/nscan/train.py 2>&1 | tee $RUN_DIR/train.log
 
 # The port will be printed in the output, you can find it with:
 # grep "Ray dashboard running on port:" $RUN_DIR/train.log
