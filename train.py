@@ -388,20 +388,14 @@ def train_model(config, checkpoint_dir=None):
 
 if __name__ == "__main__":
     import ray
-    from ray.tune.utils.util import find_free_port
 
     # Get number of GPUs from SLURM environment variable
     num_gpus = int(os.environ.get('SLURM_GPUS', 4))  # Default to 4 if not in SLURM
 
-    # Find an available port
-    dashboard_port = find_free_port()
-    
     # Initialize Ray with proper resources
     ray.init(
         num_gpus=num_gpus,  # Specify number of GPUs available
         log_to_driver=True,  # Enable logging
-        dashboard_port=dashboard_port,  # Ray dashboard for monitoring
-        local_dir="./ray_results"  # Where to store results
     )
 
     # Define search space
@@ -416,7 +410,7 @@ if __name__ == "__main__":
         "weight_decay": tune.loguniform(1e-6, 1e-4),
         "batch_size": tune.choice([16, 32, 64]),
         "max_length": 512,  # Fixed
-        "num_epochs": 10,  # Fixed
+        "num_epochs": 1,  # Fixed
         "validation_freq": 1000
     }
 
@@ -439,14 +433,14 @@ if __name__ == "__main__":
         config=config,
         scheduler=scheduler,
         search_alg=search_alg,
-        num_samples=20,  # Total trials
+        num_samples=8,  # Total trials
         resources_per_trial={"gpu": 1, "cpu": 4},
         callbacks=[WandbLoggerCallback(
             project="stock-predictor",
             api_key=os.getenv("WANDB_API_KEY"),
             log_config=True
         )],
-        local_dir="./ray_results",
+        storage_path="./ray_results",
         name="stock_predictor_tune"
     )
 
