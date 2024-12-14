@@ -1,127 +1,228 @@
+import os
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast, GradScaler
-from torch.utils.data import Dataset, DataLoader
+from torch.amp import autocast, GradScaler
+from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
+from datasets import load_dataset
 from datetime import datetime
 from typing import Dict, List
-from .model import MultiStockPredictor
+import wandb
+from ray import tune
+from ray.tune.schedulers import ASHAScheduler
+from ray.tune.search.hyperopt import HyperOptSearch
+from ray.tune.integration.wandb import WandbLoggerCallback
+from .model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 
-class NewsReturnsDataset(Dataset):
-    def __init__(self, articles: List[str], dates: List[datetime], returns: Dict[datetime, torch.Tensor]):
+
+def load_data(years):
+    # Load returns data by year
+    returns_by_year = {}
+    sp500_by_year = {}
+    
+    for year in years:
+        # Load returns DataFrame for this year
+        returns_df = pd.read_csv(f"data/returns/{year}_returns.csv")
+        returns_df.set_index('Date', inplace=True)
+        returns_by_year[year] = returns_df
+        
+        # Get SP500 symbols for this year
+        sp500_by_year[year] = list(returns_df.columns)
+    
+    return returns_by_year, sp500_by_year
+
+class NewsReturnDataset(torch.utils.data.Dataset):
+    def __init__(self, articles_dataset, returns_by_year, sp500_by_year, tokenizer):
         """
         Args:
-            articles: List of news articles
-            dates: List of datetime objects for each article
-            returns: Dict mapping dates to return matrices (date -> returns tensor)
+            articles_dataset: HF dataset with news articles
+            returns_by_year: Dict[str, pd.DataFrame] mapping years to returns DataFrames
+            sp500_by_year: Dict[str, List[str]] mapping years to SP500 symbols
+            tokenizer: Tokenizer for processing articles
         """
-        self.articles = articles
-        self.dates = dates
-        self.returns = returns
+        self.articles = articles_dataset
+        self.returns_by_year = returns_by_year
+        self.sp500_by_year = sp500_by_year
+        self.tokenizer = tokenizer
+        
+        # Create master list of all unique stocks across all years
+        all_stocks = set()
+        for symbols in sp500_by_year.values():
+            all_stocks.update(symbols)
+        self.all_stocks = sorted(list(all_stocks))  # Sort for consistent indexing
+        
+        # Create mapping from symbol to master index
+        self.symbol_to_idx = {symbol: idx for idx, symbol in enumerate(self.all_stocks)}
+        
+        # Create year-specific stock indices
+        self.year_stock_indices = {}
+        for year, symbols in sp500_by_year.items():
+            self.year_stock_indices[year] = [self.symbol_to_idx[s] for s in symbols]
         
     def __len__(self):
         return len(self.articles)
-    
+        
     def __getitem__(self, idx):
         article = self.articles[idx]
-        date = self.dates[idx]
+        date = article['Date'].split()[0] # should be YYYY-MM-DD
+        year = date[:4]
+        next_date = get_next_trading_day(date)
         
-        # Placeholder: Get next trading day's returns
-        # TODO: Implement proper trading day calendar logic
-        next_trading_day = date  # This should be replaced with proper logic
-        target_returns = self.returns[next_trading_day]
+        # Skip if no returns data (return None and filter in collate_fn)
+        if next_date not in self.returns_by_year[year].index:
+            return None
+
+        # Get indices for this year's SP500 stocks
+        stock_indices = self.year_stock_indices[year]
+        
+        # Get returns for this year's stocks
+        returns = self.returns_by_year[year].loc[next_date].values
+
+        # Tokenize article
+        inputs = self.tokenizer(
+            article['Article'],
+            padding='max_length',
+            truncation=True,
+            max_length=512,
+            return_tensors=None #"pt" ?
+        )
         
         return {
-            'Article': article,
-            'date': date,
-            'returns': target_returns
+            'input_ids': torch.tensor(inputs['input_ids']),
+            'attention_mask': torch.tensor(inputs['attention_mask']),
+            'stock_indices': torch.tensor(stock_indices),
+            'returns': torch.tensor(returns, dtype=torch.float32)
         }
 
+def create_dataset_splits(articles_dataset, returns_by_year, sp500_by_year, tokenizer, 
+                         val_start_year, test_start_year):
+    """
+    Split dataset into train, validation, and test sets based on years.
+    
+    Args:
+        articles_dataset: HF dataset with news articles
+        returns_by_year: Dict mapping years to returns DataFrames
+        sp500_by_year: Dict mapping years to SP500 symbols
+        tokenizer: Tokenizer for processing articles
+        val_start_year: Year to start validation set (inclusive)
+        test_start_year: Year to start test set (inclusive)
+    
+    Returns:
+        train_dataset, val_dataset, test_dataset
+    """
+    
+    # Split articles by year
+    train_articles = articles_dataset.filter(
+        lambda x: int(x['Date'][:4]) < val_start_year
+    )
+    
+    val_articles = articles_dataset.filter(
+        lambda x: val_start_year <= int(x['Date'][:4]) < test_start_year
+    )
+    
+    test_articles = articles_dataset.filter(
+        lambda x: int(x['Date'][:4]) >= test_start_year
+    )
+    
+    # Create datasets
+    train_dataset = NewsReturnDataset(
+        train_articles, returns_by_year, sp500_by_year, tokenizer
+    )
+    
+    val_dataset = NewsReturnDataset(
+        val_articles, returns_by_year, sp500_by_year, tokenizer
+    )
+    
+    test_dataset = NewsReturnDataset(
+        test_articles, returns_by_year, sp500_by_year, tokenizer
+    )
+    
+    return train_dataset, val_dataset, test_dataset
+
 def collate_fn(batch):
-    """
-    Custom collate function to handle the batch creation
-    """
+    # Filter out None values (samples we couldn't use)
+    batch = [b for b in batch if b is not None]
+    
     return {
-        'Article': [item['Article'] for item in batch],
-        'dates': [item['date'] for item in batch],
-        'returns': torch.stack([item['returns'] for item in batch])
+        'input_ids': torch.stack([b['input_ids'] for b in batch]),
+        'attention_mask': torch.stack([b['attention_mask'] for b in batch]),
+        'stock_indices': torch.stack([b['stock_indices'] for b in batch]),
+        'returns': torch.stack([b['returns'] for b in batch])
     }
 
 class Trainer:
     def __init__(
         self,
-        model,
+        config,
         train_dataset,
         val_dataset,
         tokenizer,
-        batch_size: int = 32,  # Now this is number of articles per batch
-        learning_rate: float = 1e-4,
-        weight_decay: float = 0.01,
-        num_epochs: int = 10,
-        k_stocks: int = 50,
-        max_length: int = 512,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        checkpoint_dir=None
     ):
-        self.model = model.to(device)
+        self.config = config
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Initialize model
+        self.model = MultiStockPredictorWithConfidence(
+            num_stocks=len(train_dataset.all_stocks),  # Total unique stocks
+            num_decoder_layers=config["num_decoder_layers"],
+            num_heads=config["num_heads"],
+            num_pred_layers=config["num_pred_layers"],
+            attn_dropout=config["attn_dropout"],
+            ff_dropout=config["ff_dropout"],
+            encoder_name=config["encoder_name"]
+        ).to(self.device)
+
+        # Create data loaders
         self.train_loader = DataLoader(
             train_dataset,
-            batch_size=batch_size,
+            batch_size=config["batch_size"],
             shuffle=True,
             collate_fn=collate_fn,
-            num_workers=4,  # Adjust based on your system
-            pin_memory=True if device == "cuda" else False
+            num_workers=4,
+            pin_memory=True if self.device == "cuda" else False
         )
+        
         self.val_loader = DataLoader(
             val_dataset,
-            batch_size=batch_size,
+            batch_size=config["batch_size"],
             shuffle=False,
             collate_fn=collate_fn,
             num_workers=4,
-            pin_memory=True if device == "cuda" else False
+            pin_memory=True if self.device == "cuda" else False
         )
+
         self.tokenizer = tokenizer
-        self.device = device
-        self.k_stocks = k_stocks
-        self.max_length = max_length
+        self.max_length = config["max_length"]
         
-        # Initialize optimizer with weight decay
+        # Initialize optimizer
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
-            lr=learning_rate,
-            weight_decay=weight_decay
+            lr=config["lr"],
+            weight_decay=config["weight_decay"]
         )
         
-        # Learning rate scheduler
+        # Scheduler and scaler
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, 
-            T_max=num_epochs
+            T_max=config["num_epochs"]
         )
-        
-        # AMP scaler
         self.scaler = GradScaler()
+
+        # Load checkpoint if provided
+        if checkpoint_dir:
+            checkpoint = torch.load(os.path.join(checkpoint_dir, "checkpoint.pt"))
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         
-        # Loss function
-        self.loss = nn.MSELoss()
-        
-    def process_batch(self, batch):
-        # Tokenize the articles
-        encoded = self.tokenizer(
-            batch['Article'],
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt"
-        )
-        
+    def move_batch(self, batch):
         # Move to device
-        input_ids = encoded['input_ids'].to(self.device)
-        attention_mask = encoded['attention_mask'].to(self.device)
-        return_labels = batch['returns'].to(self.device)  # Shape: (batch_size, num_stocks)
-        
         return {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'return_labels': return_labels
+            'input_ids': batch['input_ids'].to(self.device),
+            'attention_mask': batch['attention_mask'].to(self.device),
+            'stock_indices': batch['stock_indices'].to(self.device),
+            'returns': batch['returns'].to(self.device)
         }
         
     def train_epoch(self):
@@ -129,27 +230,23 @@ class Trainer:
         total_loss = 0
         
         for batch in self.train_loader:
-            processed_batch = self.process_batch(batch)
+            device_batch = self.move_batch(batch)
             
             # Zero gradients
             self.optimizer.zero_grad()
             
             # Forward pass with AMP
             with autocast():
-                predictions, stock_logits = self.model(
-                    {
-                        'input_ids': processed_batch['input_ids'],
-                        'attention_mask': processed_batch['attention_mask']
+                predictions, confidences = self.model(
+                    input={
+                        'input_ids': device_batch['input_ids'],
+                        'attention_mask': device_batch['attention_mask']
                     },
-                    k=self.k_stocks
+                    stock_indices=device_batch['stock_indices']
                 )
                 
-                # Get returns for selected stocks only
-                top_k_values, top_k_indices = torch.topk(stock_logits, self.k_stocks)
-                selected_returns = torch.gather(processed_batch['return_labels'], 1, top_k_indices)
-                
                 # Calculate loss
-                loss = self.loss(predictions, selected_returns)
+                loss = confidence_weighted_loss(predictions, device_batch['returns'], confidences)
             
             # Backward pass with AMP
             self.scaler.scale(loss).backward()
@@ -166,21 +263,18 @@ class Trainer:
         
         with torch.no_grad():
             for batch in self.val_loader:
-                processed_batch = self.process_batch(batch)
+                device_batch = self.move_batch(batch)
                 
                 with autocast():
-                    predictions, stock_logits = self.model(
-                        {
-                            'input_ids': processed_batch['input_ids'],
-                            'attention_mask': processed_batch['attention_mask']
+                    predictions, confidences = self.model(
+                        input={
+                            'input_ids': device_batch['input_ids'],
+                            'attention_mask': device_batch['attention_mask']
                         },
-                        k=self.k_stocks
+                        stock_indices=device_batch['stock_indices']
                     )
                     
-                    top_k_values, top_k_indices = torch.topk(stock_logits, self.k_stocks)
-                    selected_returns = torch.gather(processed_batch['return_labels'], 1, top_k_indices)
-                    
-                    loss = self.loss(predictions, selected_returns)
+                    loss = confidence_weighted_loss(predictions, device_batch['returns'], confidences)
                     total_loss += loss.item()
         
         return total_loss / len(self.val_loader)
@@ -189,6 +283,9 @@ class Trainer:
         best_val_loss = float('inf')
         
         for epoch in range(num_epochs):
+            # Log start time
+            start_time = datetime.now()
+
             train_loss = self.train_epoch()
             val_loss = self.validate()
             self.scheduler.step()
@@ -198,44 +295,117 @@ class Trainer:
                 best_val_loss = val_loss
                 torch.save(self.model.state_dict(), 'best_model.pt')
             
+
+            # Log to WandB # Report metrics to Ray Tune
+            tune.report(
+                train_loss=train_loss,
+                val_loss=val_loss,
+                epoch=epoch
+            )
+
             print(f"Epoch {epoch+1}/{num_epochs}")
+            print(f"Time: {datetime.now() - start_time}")
             print(f"Train Loss: {train_loss:.4f}")
             print(f"Val Loss: {val_loss:.4f}")
+            print(f"Best Val Loss: {best_val_loss:.4f}")
             print("-" * 50)
 
-# Example usage:
-if __name__ == "__main__":
-    from transformers import AutoTokenizer
-    from datasets import load_dataset
-    
+def train_model(config, checkpoint_dir=None):    
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained("FinText/FinText-Base-2007")
     
     # Load dataset
-    dataset = load_dataset("sabareesh88/FNSPID_nasdaq_sorted")
-    # Split into train/val and create DataLoaders
-    # ... (implement your data loading logic here)
-    
-    # Initialize model
-    model = MultiStockPredictor(
-        num_stocks=500, 
-        num_decoder_layers=4,
-        num_heads=4,
-        attn_dropout=0.1,
-        ff_dropout=0.1
+    years = range(2006, 2023)
+    returns_by_year, sp500_by_year = load_data(years)
+    articles_dataset = load_dataset("csv", data_files="data/raw/FNSPID-date-corrected.csv", split="train")
+    train_dataset, val_dataset, test_dataset = create_dataset_splits(
+        articles_dataset,
+        returns_by_year,
+        sp500_by_year,
+        tokenizer,
+        val_start_year=2022,
+        test_start_year=2023
     )
     
-    # Initialize trainer
+    # Create trainer
     trainer = Trainer(
-        model=model,
-        train_loader=train_loader,  # Your DataLoader instances
-        val_loader=val_loader,
+        config=config,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
         tokenizer=tokenizer,
-        learning_rate=1e-4,
-        num_epochs=10,
-        k_stocks=3,
-        max_length=512
+        checkpoint_dir=checkpoint_dir
     )
     
-    # Train the model
-    trainer.train(num_epochs=10)
+    # Train
+    trainer.train()
+
+
+
+
+if __name__ == "__main__":
+    import ray
+    from ray.tune.utils.util import find_free_port
+
+    # Get number of GPUs from SLURM environment variable
+    num_gpus = int(os.environ.get('SLURM_GPUS', 4))  # Default to 4 if not in SLURM
+
+    # Find an available port
+    dashboard_port = find_free_port()
+    
+    # Initialize Ray with proper resources
+    ray.init(
+        num_gpus=num_gpus,  # Specify number of GPUs available
+        log_to_driver=True,  # Enable logging
+        dashboard_port=dashboard_port,  # Ray dashboard for monitoring
+        local_dir="./ray_results"  # Where to store results
+    )
+
+    # Define search space
+    config = {
+        "num_decoder_layers": tune.choice([2, 3, 4]),
+        "num_heads": tune.choice([4, 6]),
+        "num_pred_layers": tune.choice([2, 3, 4]),
+        "attn_dropout": tune.uniform(0.1, 0.3),
+        "ff_dropout": tune.uniform(0.1, 0.3),
+        "encoder_name": "FinText/FinText-Base-2007",
+        "lr": tune.loguniform(1e-5, 1e-3),
+        "weight_decay": tune.loguniform(1e-6, 1e-4),
+        "batch_size": tune.choice([16, 32, 64]),
+        "max_length": 512,  # Fixed
+        "num_epochs": 10  # Fixed
+    }
+
+    # Initialize ASHA scheduler
+    scheduler = ASHAScheduler(
+        max_t=10,  # Max epochs
+        grace_period=2,  # Min epochs before pruning
+        reduction_factor=2
+    )
+
+    # Initialize search algorithm
+    search_alg = HyperOptSearch(
+        metric="val_loss",
+        mode="min"
+    )
+
+    # Start tuning
+    analysis = tune.run(
+        train_model,
+        config=config,
+        scheduler=scheduler,
+        search_alg=search_alg,
+        num_samples=20,  # Total trials
+        resources_per_trial={"gpu": 1, "cpu": 4},
+        callbacks=[WandbLoggerCallback(
+            project="stock-predictor",
+            api_key=os.getenv("WANDB_API_KEY"),
+            log_config=True
+        )],
+        local_dir="./ray_results",
+        name="stock_predictor_tune"
+    )
+
+    # Print best config
+    print("Best config:", analysis.get_best_config(metric="val_loss", mode="min"))
+
+    ray.shutdown()

@@ -189,7 +189,7 @@ class MultiStockPredictor(nn.Module):
         )
         
         # Return prediction head
-        self.return_predictor = create_predictor(
+        self.predictor = create_predictor(
             input_dim=hidden_dim,
             num_layers=num_pred_layers,
             ff_dropout=ff_dropout
