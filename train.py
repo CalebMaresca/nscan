@@ -7,7 +7,7 @@ from transformers import AutoTokenizer
 from datasets import load_dataset
 from datetime import datetime
 from typing import Dict, List
-import wandb
+import pandas as pd
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
@@ -209,6 +209,8 @@ class Trainer:
         )
         self.scaler = GradScaler()
 
+        self.validation_freq = config["validation_freq"]
+
         # Load checkpoint if provided
         if checkpoint_dir:
             checkpoint = torch.load(os.path.join(checkpoint_dir, "checkpoint.pt"))
@@ -228,8 +230,9 @@ class Trainer:
     def train_epoch(self):
         self.model.train()
         total_loss = 0
+        num_batches = len(self.train_loader)
         
-        for batch in self.train_loader:
+        for batch_idx, batch in enumerate(self.train_loader):
             device_batch = self.move_batch(batch)
             
             # Zero gradients
@@ -254,6 +257,27 @@ class Trainer:
             self.scaler.update()
             
             total_loss += loss.item()
+
+            # Validate and report every validation_freq batches
+            if (batch_idx + 1) % self.validation_freq == 0:
+                current_train_loss = total_loss / (batch_idx + 1)
+                val_loss = self.validate()
+                
+                # Calculate progress within epoch
+                progress = (batch_idx + 1) / num_batches
+                current_epoch = self.current_epoch + progress
+                
+                # Report to Ray Tune
+                tune.report(
+                    train_loss=current_train_loss,
+                    val_loss=val_loss,
+                    epoch=current_epoch
+                )
+                
+                print(f"Epoch {self.current_epoch + 1}, Batch {batch_idx + 1}/{num_batches}")
+                print(f"Train Loss: {current_train_loss:.4f}")
+                print(f"Val Loss: {val_loss:.4f}")
+                print("-" * 30)
             
         return total_loss / len(self.train_loader)
     
@@ -281,9 +305,10 @@ class Trainer:
     
     def train(self, num_epochs: int):
         best_val_loss = float('inf')
+        self.current_epoch = 0
         
         for epoch in range(num_epochs):
-            # Log start time
+            self.current_epoch = epoch
             start_time = datetime.now()
 
             train_loss = self.train_epoch()
@@ -300,7 +325,7 @@ class Trainer:
             tune.report(
                 train_loss=train_loss,
                 val_loss=val_loss,
-                epoch=epoch
+                epoch=epoch + 1
             )
 
             print(f"Epoch {epoch+1}/{num_epochs}")
@@ -372,7 +397,8 @@ if __name__ == "__main__":
         "weight_decay": tune.loguniform(1e-6, 1e-4),
         "batch_size": tune.choice([16, 32, 64]),
         "max_length": 512,  # Fixed
-        "num_epochs": 10  # Fixed
+        "num_epochs": 10,  # Fixed
+        "validation_freq": 1000
     }
 
     # Initialize ASHA scheduler
