@@ -30,14 +30,15 @@ def get_next_trading_day(start_date):
     
     return current_date.strftime('%Y-%m-%d')
 
-def load_data(years):
+def load_data(years, data_dir):
     # Load returns data by year
     returns_by_year = {}
     sp500_by_year = {}
     
     for year in years:
         # Load returns DataFrame for this year
-        df = pd.read_csv(f"data/returns/{year}_returns.csv")
+        file_path = os.path.join(data_dir, f"{year}_returns.csv")
+        df = pd.read_csv(file_path)
         
         # Pivot the data to get dates as rows and PERMNOs as columns
         returns_df = df.pivot(
@@ -360,8 +361,9 @@ def train_model(config, checkpoint_dir=None):
     
     # Load dataset
     years = range(2006, 2023)
-    returns_by_year, sp500_by_year = load_data(years)
-    articles_dataset = load_dataset("csv", data_files="data/raw/FNSPID-date-corrected.csv", split="train")
+    returns_by_year, sp500_by_year = load_data(years, os.path.join(config["data_dir"], "returns"))
+    articles_path = os.path.join(config["data_dir"], "raw", "FNSPID-date-corrected.csv")
+    articles_dataset = load_dataset("csv", data_files=articles_path, split="train")
     train_dataset, val_dataset, test_dataset = create_dataset_splits(
         articles_dataset,
         returns_by_year,
@@ -411,7 +413,8 @@ if __name__ == "__main__":
         "batch_size": tune.choice([16, 32, 64]),
         "max_length": 512,  # Fixed
         "num_epochs": 1,  # Fixed
-        "validation_freq": 1000
+        "validation_freq": 1000,
+        "data_dir": "/home/ccm7752/DL_Systems/nscan/data"
     }
 
     # Initialize ASHA scheduler
