@@ -440,7 +440,7 @@ if __name__ == "__main__":
             api_key=os.getenv("WANDB_API_KEY"),
             log_config=True
         )],
-        storage_path="./ray_results",
+        storage_path=os.path.abspath("./ray_results"),
         name="stock_predictor_tune"
     )
 
