@@ -177,7 +177,11 @@ class MultiStockPredictor(nn.Module):
         self.stock_selector = StockSelectionHead(hidden_dim, num_stocks)
         
         # Stock embedding layer (convert stock indices to embeddings)
-        self.stock_embeddings = nn.Embedding(num_stocks, hidden_dim)
+        self.stock_embeddings = nn.Embedding(
+            num_embeddings=num_stocks + 1,
+            embedding_dim=hidden_dim,
+            padding_idx=0
+)
         
         # Decoder
         self.decoder = StockDecoder(
@@ -260,7 +264,11 @@ class MultiStockPredictorWithConfidence(nn.Module):
             param.requires_grad = False
             
         # Stock embedding layer (convert stock indices to embeddings)
-        self.stock_embeddings = nn.Embedding(num_stocks, hidden_dim)
+        self.stock_embeddings = nn.Embedding(
+            num_embeddings=num_stocks + 1,
+            embedding_dim=hidden_dim,
+            padding_idx=0
+)
         
         # Decoder
         self.decoder = StockDecoder(
@@ -298,7 +306,9 @@ class MultiStockPredictorWithConfidence(nn.Module):
             predictions: Predicted returns for all stocks (batch_size, num_stocks)
             confidences: Confidence scores for all stocks (batch_size, num_stocks)
         """
-        
+        # Create padding mask (1 for real stocks, 0 for padding)
+        padding_mask = (stock_indices != 0).float()  # Or whatever padding index you used
+
         # Get stock embeddings for the valid stocks
         stock_embeddings = self.stock_embeddings(stock_indices)  # (batch_size, num_stocks_per_date, hidden_dim)
 
@@ -312,8 +322,8 @@ class MultiStockPredictorWithConfidence(nn.Module):
         )
         
         # Predict returns and confidences
-        predictions = self.return_predictor(decoded_stocks).squeeze(-1)  # (batch_size, num_stocks)
-        confidence_logits = self.confidence_predictor(decoded_stocks).squeeze(-1)  # (batch_size, num_stocks)
+        predictions = self.return_predictor(decoded_stocks).squeeze(-1) * padding_mask  # (batch_size, num_stocks)
+        confidence_logits = self.confidence_predictor(decoded_stocks).squeeze(-1) * padding_mask  # (batch_size, num_stocks)
         
         # Normalize confidence scores using softmax
         confidences = torch.softmax(confidence_logits, dim=-1)

@@ -71,7 +71,7 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         self.all_stocks = sorted(list(set().union(*sp500_by_year.values())))
         
         # Create mapping from symbol to master index
-        self.symbol_to_idx = {symbol: idx for idx, symbol in enumerate(self.all_stocks)}
+        self.symbol_to_idx = {symbol: idx+1 for idx, symbol in enumerate(self.all_stocks)} # we start indexing at 1 to use 0 as padding token
         
         # Create year-specific stock indices
         self.year_stock_indices = {}
@@ -159,14 +159,39 @@ def create_dataset_splits(articles_dataset, returns_by_year, sp500_by_year, toke
     return train_dataset, val_dataset, test_dataset
 
 def collate_fn(batch):
-    # Filter out None values (samples we couldn't use)
+    # Filter out None values
     batch = [b for b in batch if b is not None]
+    
+    # Find maximum number of stocks in this batch
+    max_stocks = max(b['stock_indices'].size(0) for b in batch)
+    
+    # Pad stock indices and returns
+    padded_indices = []
+    padded_returns = []
+    
+    for b in batch:
+        num_stocks = b['stock_indices'].size(0)
+        # Pad stock indices with 0
+        padded_idx = torch.nn.functional.pad(
+            b['stock_indices'], 
+            (0, max_stocks - num_stocks), 
+            value=0
+        )
+        padded_indices.append(padded_idx)
+        
+        # Pad returns with 0
+        padded_ret = torch.nn.functional.pad(
+            b['returns'], 
+            (0, max_stocks - num_stocks), 
+            value=0.0
+        )
+        padded_returns.append(padded_ret)
     
     return {
         'input_ids': torch.stack([b['input_ids'] for b in batch]),
         'attention_mask': torch.stack([b['attention_mask'] for b in batch]),
-        'stock_indices': torch.stack([b['stock_indices'] for b in batch]),
-        'returns': torch.stack([b['returns'] for b in batch])
+        'stock_indices': torch.stack(padded_indices),
+        'returns': torch.stack(padded_returns)
     }
 
 class Trainer:
