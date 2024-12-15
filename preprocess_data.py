@@ -40,7 +40,7 @@ def load_returns_and_sp500_data(years, data_dir):
         
     return returns_by_year, sp500_by_year
 
-def create_process_function(returns_by_year, trading_dates_by_year, year_stock_indices, tokenizer, max_length=512):
+def create_process_function(returns_by_year, year_stock_indices, tokenizer, max_length=512):
     def process_batch(batch):
         processed_data = {
             'input_ids': [],
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         cache_dir='/scratch/ccm7752/dataset_cache'
     )
     print("Data loaded! About to preprocess and save", flush=True)
-    
+
     # Create save directory
     save_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
     os.makedirs(save_dir, exist_ok=True)

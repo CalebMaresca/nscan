@@ -272,7 +272,6 @@ def main():
     import ray
 
     os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
-    os.environ['TRANSFORMERS_CACHE'] = '/scratch/ccm7752/huggingface_cache'
     os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
     os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
 

@@ -10,7 +10,6 @@
 
 # Set cache directory for huggingface
 export HF_HOME=/scratch/$USER/huggingface_cache
-export TRANSFORMERS_CACHE=/scratch/$USER/huggingface_cache
 
 # Create cache directories if they don't exist
 mkdir -p $HF_HOME
