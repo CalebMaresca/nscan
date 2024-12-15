@@ -8,27 +8,12 @@ from datasets import load_dataset
 from datetime import datetime, timedelta
 from typing import Dict, List
 import pandas as pd
-import exchange_calendars as xcals
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.air.integrations.wandb import WandbLoggerCallback
 from src.nscan.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 
-# Get the NYSE calendar
-nyse = xcals.get_calendar("XNYS")
-
-def get_next_trading_day(start_date):
-    if not isinstance(start_date, datetime):
-        start_date = datetime.strptime(start_date, '%Y-%m-%d')
-    
-    current_date = start_date + timedelta(days=1)  # Start with next day
-    
-    # Keep moving forward until we find a trading day
-    while not nyse.is_session(current_date.strftime('%Y-%m-%d')):
-        current_date += timedelta(days=1)
-    
-    return current_date.strftime('%Y-%m-%d')
 
 def load_data(years, data_dir):
     # Load returns data by year
@@ -85,11 +70,16 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         article = self.articles[idx]
         date = article['Date'].split()[0] # should be YYYY-MM-DD
         year = date[:4]
-        next_date = get_next_trading_day(date)
         
-        # Skip if no returns data (return None and filter in collate_fn)
-        if next_date not in self.returns_by_year[year].index:
-            return None
+        # Get all dates in this year's returns DataFrame
+        year_dates = self.returns_by_year[year].index
+        
+        # Find the next available date after the article date
+        next_dates = year_dates[year_dates > date]
+        if len(next_dates) == 0:
+            return None  # No future dates available in this year
+            
+        next_date = next_dates[0]  # Get the first future date
 
         # Get indices for this year's SP500 stocks
         stock_indices = self.year_stock_indices[year]
