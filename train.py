@@ -400,8 +400,9 @@ def main():
 
     # Load data
     years = range(2006, 2023)
-    returns_by_year, sp500_by_year = load_data(years, "/home/ccm7752/DL_Systems/nscan/data")
-    articles_path = os.path.join("/home/ccm7752/DL_Systems/nscan/data", "raw", "FNSPID-date-corrected.csv")
+    data_dir = "/home/ccm7752/DL_Systems/nscan/data"
+    returns_by_year, sp500_by_year = load_data(years, os.path.join(data_dir, "returns"))
+    articles_path = os.path.join(data_dir, "raw", "FNSPID-date-corrected.csv")
     articles_dataset = load_dataset(
         "csv", 
         data_files=articles_path, 
