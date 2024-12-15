@@ -344,6 +344,25 @@ def confidence_weighted_loss(predictions: torch.Tensor,
     Returns:
         loss: Weighted MSE loss
     """
+
+    # Check for NaN inputs
+    if torch.isnan(predictions).any():
+        print("NaN detected in predictions")
+    if torch.isnan(targets).any():
+        print("NaN detected in targets")
+    if torch.isnan(confidences).any():
+        print("NaN detected in confidences")
+
+    # Clip predictions and targets to prevent extreme values
+    predictions = torch.clamp(predictions, -100, 100)
+    targets = torch.clamp(targets, -100, 100)
+
     squared_errors = (predictions - targets) ** 2
     weighted_errors = squared_errors * confidences
-    return weighted_errors.sum() / confidences.sum()
+
+    # Sanity check - confidences should sum to 1.0 per batch
+    batch_sums = confidences.sum(dim=-1)
+    if not torch.allclose(batch_sums, torch.ones_like(batch_sums)):
+        print(f"Warning: Confidence sums not 1.0: {batch_sums}")
+
+    return weighted_errors.sum(dim=-1).mean()
