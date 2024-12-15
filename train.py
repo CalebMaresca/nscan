@@ -466,6 +466,7 @@ def main():
         return trainer.train()
 
     # Start tuning
+    ray_results_dir = "/scratch/ccm7752/DL_Systems/project/ray_results"
     analysis = tune.run(
         train_model,
         config=config,
@@ -478,7 +479,7 @@ def main():
             api_key=os.getenv("WANDB_API_KEY"),
             log_config=True
         )],
-        storage_path=os.path.abspath("./ray_results"),
+        storage_path=ray_results_dir,
         name="stock_predictor_tune"
     )
 
