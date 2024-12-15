@@ -6,22 +6,14 @@
 #SBATCH --cpus-per-task=6        # 6 CPU cores per task
 #SBATCH --mem=16G                # Request 16GB of memory
 #SBATCH --time=0:30:00          # Time limit of 30 minutes
-#SBATCH --output=$SCRATCH/DL_Systems/project/logs/%x-%j.out       # Output file: jobname-jobid.out
-#SBATCH --error=$SCRATCH/DL_Systems/project/logs/%x-%j.err        # Error file: jobname-jobid.err
+#SBATCH --output=logs/%x-%j.out       # Output file: jobname-jobid.out
+#SBATCH --error=logs/%x-%j.err        # Error file: jobname-jobid.err
 #SBATCH --export=ALL             # Export all environment variables
 
 # Print important environment information
 echo "Job ID: $SLURM_JOB_ID"
 echo "Running on node: $SLURMD_NODENAME"
 echo "Start time: $(date)"
-
-# Create directories for logs and ray results
-mkdir -p $SCRATCH/DL_Systems/project/logs
-mkdir -p $SCRATCH/DL_Systems/project/ray_results
-
-# Create a directory for this run
-RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/$SLURM_JOB_ID"
-mkdir -p $RUN_DIR
 
 singularity exec --nv \
     --overlay $SCRATCH/DL_Systems/project/overlay-25GB-500K.ext3:r \
@@ -34,6 +26,10 @@ conda activate py311
 
 # Set up wandb API key
 export WANDB_API_KEY=$(cat $SCRATCH/DL_Systems/project/.wandb_key)
+
+# Create a directory for this run
+RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/$SLURM_JOB_ID"
+mkdir -p $RUN_DIR
 
 # Run the training script and save the dashboard port
 python $HOME/DL_Systems/nscan/train.py 2>&1 | tee $RUN_DIR/train.log

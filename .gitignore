@@ -34,6 +34,7 @@ env/
 data/raw/*
 !data/raw/.gitkeep
 data/returns/*
+logs/
 *.pth
 *.ckpt
 

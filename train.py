@@ -456,7 +456,7 @@ def main():
         return trainer.train()
 
     # Start tuning
-    ray_results_dir = "/scratch/ccm7752/DL_Systems/project/ray_results"
+    ray_results_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/ray_results")
     analysis = tune.run(
         train_model,
         config=config,
