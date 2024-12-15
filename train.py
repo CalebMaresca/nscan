@@ -2,8 +2,7 @@ import os
 import torch
 from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from datetime import datetime
 #from typing import Dict, List
 import pandas as pd
@@ -15,174 +14,38 @@ from ray.air.integrations.wandb import WandbLoggerCallback
 from src.nscan.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 
 
-def load_data(years, data_dir):
-    # Load returns data by year
-    returns_by_year = {}
-    sp500_by_year = {}
-    
-    for year in years:
-        # Load returns DataFrame for this year
-        file_path = os.path.join(data_dir, f"{year}_returns.csv")
-        df = pd.read_csv(file_path)
-
-        # Check raw data before pivot
-        print(f"\nYear {year}:")
-        print(f"Raw data NaN count: {df['DlyRet'].isna().sum()}")
-        
-        # Pivot the data to get dates as rows and PERMNOs as columns
-        returns_df = df.pivot(
-            index='DlyCalDt', 
-            columns='PERMNO', 
-            values='DlyRet'
-        ).sort_index(axis=1)  # Sort columns (PERMNOs)
-
-        # Check pivoted data
-        print(f"Pivoted data NaN count: {returns_df.isna().sum().sum()}")
-        print(f"Total cells: {returns_df.size}")
-        print(f"NaN percentage: {(returns_df.isna().sum().sum() / returns_df.size) * 100:.2f}%")
-
-        # Fill NaN values with 0 (or another appropriate value)
-        returns_df = returns_df.fillna(0)
-        
-        returns_by_year[str(year)] = returns_df
-        # Get unique sorted PERMNOs for this year
-        sp500_by_year[str(year)] = sorted(df['PERMNO'].unique().tolist())
-        
-    return returns_by_year, sp500_by_year
-
 class NewsReturnDataset(torch.utils.data.Dataset):
-    def __init__(self, articles_dataset, returns_by_year, sp500_by_year, tokenizer):
+    def __init__(self, preprocessed_dataset):
         """
         Args:
-            articles_dataset: HF dataset with news articles
-            returns_by_year: Dict[str, pd.DataFrame] mapping years to returns DataFrames
-            sp500_by_year: Dict[str, List[str]] mapping years to SP500 symbols
-            tokenizer: Tokenizer for processing articles
+            preprocessed_dataset: HF dataset with preprocessed articles
         """
-        self.articles = articles_dataset
-        self.returns_by_year = returns_by_year
-        self.sp500_by_year = sp500_by_year
-        self.tokenizer = tokenizer
-
-        # Precompute next_dates for all articles
-        self.next_dates = {}  # map article idx to next trading date
-        for idx in range(len(articles_dataset)):
-            article = articles_dataset[idx]
-            date = article['Date'].split()[0]
-            year = date[:4]
-            year_dates = returns_by_year[year].index
-            next_date = year_dates[year_dates > date][0]
-            self.next_dates[idx] = next_date
-        
-        # Create master list of all unique stocks across all years
-        self.all_stocks = sorted(list(set().union(*sp500_by_year.values())))
-        
-        # Create mapping from symbol to master index
-        self.symbol_to_idx = {symbol: idx+1 for idx, symbol in enumerate(self.all_stocks)} # we start indexing at 1 to use 0 as padding token
-        
-        # Create year-specific stock indices
-        self.year_stock_indices = {}
-        for year, symbols in sp500_by_year.items():
-            self.year_stock_indices[year] = [self.symbol_to_idx[s] for s in symbols]
+        self.articles = preprocessed_dataset
         
     def __len__(self):
         return len(self.articles)
         
     def __getitem__(self, idx):
         article = self.articles[idx]
-        date = article['Date'].split()[0] # should be YYYY-MM-DD
-        year = date[:4]
-        
-        next_date = self.next_dates[idx]
-
-        # Get indices for this year's SP500 stocks
-        stock_indices = self.year_stock_indices[year]
-        
-        # Get returns for this year's stocks
-        returns = self.returns_by_year[year].loc[next_date].values
-
-        # Check for NaN values
-        if np.isnan(returns).any():
-            print(f"Warning: NaN returns found for date {next_date}")
-            # Fill NaN values with 0 or another appropriate value
-            returns = np.nan_to_num(returns, 0.0)
-
-        # Tokenize article
-        inputs = self.tokenizer(
-            article['Article'],
-            padding='max_length',
-            truncation=True,
-            max_length=512,
-            return_tensors=None #"pt" ?
-        )
         
         return {
-            'input_ids': torch.tensor(inputs['input_ids']),
-            'attention_mask': torch.tensor(inputs['attention_mask']),
-            'stock_indices': torch.tensor(stock_indices),
-            'returns': torch.tensor(returns, dtype=torch.float32)
+            'input_ids': torch.tensor(article['input_ids']),
+            'attention_mask': torch.tensor(article['attention_mask']),
+            'stock_indices': torch.tensor(article['stock_indices']),
+            'returns': torch.tensor(article['returns'], dtype=torch.float32)
         }
 
-def create_dataset_splits(articles_dataset, returns_by_year, sp500_by_year, tokenizer, 
-                         val_start_year, test_start_year):
-    """
-    Split dataset into train, validation, and test sets based on years.
+def load_preprocessed_datasets(data_dir):
+    # Load the preprocessed datasets
+    dataset_dict = load_from_disk(data_dir)
+    metadata = torch.load(os.path.join(data_dir, 'metadata.pt'))
     
-    Args:
-        articles_dataset: HF dataset with news articles
-        returns_by_year: Dict mapping years to returns DataFrames
-        sp500_by_year: Dict mapping years to SP500 symbols
-        tokenizer: Tokenizer for processing articles
-        val_start_year: Year to start validation set (inclusive)
-        test_start_year: Year to start test set (inclusive)
+    # Create custom datasets
+    train_dataset = NewsReturnDataset(dataset_dict['train'])
+    val_dataset = NewsReturnDataset(dataset_dict['validation'])
+    test_dataset = NewsReturnDataset(dataset_dict['test'])
     
-    Returns:
-        train_dataset, val_dataset, test_dataset
-    """
-    def is_valid_article(article):
-        # Filter out articles that don't have returns data for the year or next day returns
-        date = article['Date'].split()[0]
-        year = date[:4]
-        
-        # First check if we have returns data for this year
-        if year not in returns_by_year:
-            return False
-            
-        # Check for next-day returns
-        year_dates = returns_by_year[year].index
-        next_dates = year_dates[year_dates > date]
-        if len(next_dates) == 0:
-            return False
-            
-        return True
-    
-    # Split articles by year
-    train_articles = articles_dataset.filter(
-        lambda x: is_valid_article(x) and int(x['Date'][:4]) < val_start_year
-    )
-    
-    val_articles = articles_dataset.filter(
-        lambda x: is_valid_article(x) and val_start_year <= int(x['Date'][:4]) < test_start_year
-    )
-    
-    test_articles = articles_dataset.filter(
-        lambda x: is_valid_article(x) and int(x['Date'][:4]) >= test_start_year
-    )
-    
-    # Create datasets
-    train_dataset = NewsReturnDataset(
-        train_articles, returns_by_year, sp500_by_year, tokenizer
-    )
-    
-    val_dataset = NewsReturnDataset(
-        val_articles, returns_by_year, sp500_by_year, tokenizer
-    )
-    
-    test_dataset = NewsReturnDataset(
-        test_articles, returns_by_year, sp500_by_year, tokenizer
-    )
-    
-    return train_dataset, val_dataset, test_dataset
+    return train_dataset, val_dataset, test_dataset, metadata
 
 def collate_fn(batch):
     # Filter out None values
@@ -226,7 +89,6 @@ class Trainer:
         config,
         train_dataset,
         val_dataset,
-        tokenizer,
         checkpoint_dir=None
     ):
         self.config = config
@@ -234,7 +96,7 @@ class Trainer:
         
         # Initialize model
         self.model = MultiStockPredictorWithConfidence(
-            num_stocks=len(train_dataset.all_stocks),  # Total unique stocks
+            num_stocks=config["num_stocks"],  # Total unique stocks
             num_decoder_layers=config["num_decoder_layers"],
             num_heads=config["num_heads"],
             num_pred_layers=config["num_pred_layers"],
@@ -262,7 +124,6 @@ class Trainer:
             pin_memory=True if self.device == "cuda" else False
         )
 
-        self.tokenizer = tokenizer
         self.max_length = config["max_length"]
         
         # Initialize optimizer
@@ -415,30 +276,8 @@ def main():
     os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
     os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
 
-    # Load tokenizer
-    encoder_name = "FinText/FinText-Base-2007"
-    tokenizer = AutoTokenizer.from_pretrained(encoder_name)
-
-    # Load data
-    years = range(2006, 2023)
-    data_dir = "/home/ccm7752/DL_Systems/nscan/data"
-    returns_by_year, sp500_by_year = load_data(years, os.path.join(data_dir, "returns"))
-    articles_path = os.path.join(data_dir, "raw", "FNSPID-date-corrected.csv")
-    articles_dataset = load_dataset(
-        "csv", 
-        data_files=articles_path, 
-        split="train",
-        cache_dir='/scratch/ccm7752/dataset_cache'
-    )
-   
-    # Create dataset splits once
-    train_dataset, val_dataset, test_dataset = create_dataset_splits(
-        articles_dataset, 
-        returns_by_year, 
-        sp500_by_year,
-        tokenizer,
-        val_start_year=2022,
-        test_start_year=2023
+    train_dataset, val_dataset, test_dataset, metadata = load_preprocessed_datasets(
+        os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
     )
     
     # Get number of GPUs from SLURM environment variable
@@ -457,11 +296,12 @@ def main():
         "num_pred_layers": tune.choice([2, 3, 4]),
         "attn_dropout": tune.uniform(0.1, 0.3),
         "ff_dropout": tune.uniform(0.1, 0.3),
-        "encoder_name": encoder_name,
+        "encoder_name": metadata["tokenizer_name"],
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
         "batch_size": tune.choice([64, 128, 256, 512]),
-        "max_length": 512,  # Fixed
+        "max_length": metadata["max_length"],  # Fixed
+        "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
         "validation_freq": 1000
     }
@@ -486,8 +326,7 @@ def main():
         trainer = Trainer(
             config=config,
             train_dataset=train_dataset,
-            val_dataset=val_dataset,
-            tokenizer=tokenizer
+            val_dataset=val_dataset
         )
         return trainer.train()
 
