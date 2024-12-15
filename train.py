@@ -8,7 +8,7 @@ from datasets import load_dataset
 from datetime import datetime, timedelta
 from typing import Dict, List
 import pandas as pd
-from ray import tune
+from ray import train, tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.air.integrations.wandb import WandbLoggerCallback
@@ -320,12 +320,12 @@ class Trainer:
                 progress = (batch_idx + 1) / num_batches
                 current_epoch = self.current_epoch + progress
                 
-                # Report to Ray Tune
-                tune.report(
-                    train_loss=current_train_loss,
-                    val_loss=val_loss,
-                    epoch=current_epoch
-                )
+                # Report to Ray
+                train.report({
+                    "train_loss": current_train_loss,
+                    "val_loss": val_loss,
+                    "epoch": current_epoch
+                })
                 
                 print(f"Epoch {self.current_epoch + 1}, Batch {batch_idx + 1}/{num_batches}")
                 print(f"Train Loss: {current_train_loss:.4f}")
@@ -374,12 +374,12 @@ class Trainer:
                 torch.save(self.model.state_dict(), 'best_model.pt')
             
 
-            # Log to WandB # Report metrics to Ray Tune
-            tune.report(
-                train_loss=train_loss,
-                val_loss=val_loss,
-                epoch=epoch + 1
-            )
+            # Report metrics to Ray
+            train.report({
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "epoch": epoch + 1
+            })
 
             print(f"Epoch {epoch+1}/{self.num_epochs}")
             print(f"Time: {datetime.now() - start_time}")
@@ -442,7 +442,7 @@ def main():
         "encoder_name": encoder_name,
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "batch_size": tune.choice([16, 32, 64]),
+        "batch_size": tune.choice([64, 128, 256, 512]),
         "max_length": 512,  # Fixed
         "num_epochs": 1,  # Fixed
         "validation_freq": 1000
