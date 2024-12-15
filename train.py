@@ -380,36 +380,6 @@ class Trainer:
             print(f"Best Val Loss: {best_val_loss:.4f}")
             print("-" * 50)
 
-def train_model(config, checkpoint_dir=None):    
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("FinText/FinText-Base-2007")
-    
-    # Load dataset
-    years = range(2006, 2023)
-    returns_by_year, sp500_by_year = load_data(years, os.path.join(config["data_dir"], "returns"))
-    articles_path = os.path.join(config["data_dir"], "raw", "FNSPID-date-corrected.csv")
-    articles_dataset = load_dataset("csv", data_files=articles_path, split="train", cache_dir='/scratch/ccm7752/dataset_cache')
-    train_dataset, val_dataset, test_dataset = create_dataset_splits(
-        articles_dataset,
-        returns_by_year,
-        sp500_by_year,
-        tokenizer,
-        val_start_year=2022,
-        test_start_year=2023
-    )
-    
-    # Create trainer
-    trainer = Trainer(
-        config=config,
-        train_dataset=train_dataset,
-        val_dataset=val_dataset,
-        tokenizer=tokenizer,
-        checkpoint_dir=checkpoint_dir
-    )
-    
-    # Train
-    trainer.train()
-
 
 def main():
     import ray
@@ -441,8 +411,8 @@ def main():
         returns_by_year, 
         sp500_by_year,
         tokenizer,
-        val_start_year=2019,
-        test_start_year=2021
+        val_start_year=2022,
+        test_start_year=2023
     )
     
     # Get number of GPUs from SLURM environment variable
