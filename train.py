@@ -299,11 +299,11 @@ def main():
         "encoder_name": metadata["tokenizer_name"],
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "batch_size": tune.choice([64, 128, 256, 512]),
+        "batch_size": tune.choice([16,32]),
         "max_length": metadata["max_length"],  # Fixed
         "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
-        "validation_freq": 1000
+        "validation_freq": 100
     }
 
     # Initialize ASHA scheduler

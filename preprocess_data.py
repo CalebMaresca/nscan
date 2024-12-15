@@ -123,7 +123,7 @@ def preprocess_and_save(
     # Process all articles
     for i, article in enumerate(articles_dataset):
         if i % 1000 == 0:
-            print(f"Processing article {i}")
+            print(f"Processing article {i}", flush=True)
             
         processed = process_article(article)
         if processed is None:
@@ -160,10 +160,13 @@ def preprocess_and_save(
     print(f"Split sizes: Train={len(train_articles)}, Val={len(val_articles)}, Test={len(test_articles)}")
 
 if __name__ == "__main__":
+    print("Script starting", flush=True)
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained("FinText/FinText-Base-2007")
+    print("Tokenizer initialized successfully!", flush=True)
 
     # Load data
+    print("About to load data...", flush=True)
     years = range(2006, 2023)
     data_dir = "/home/ccm7752/DL_Systems/nscan/data"
     returns_by_year, sp500_by_year = load_returns_and_sp500_data(years, os.path.join(data_dir, "returns"))
@@ -174,7 +177,7 @@ if __name__ == "__main__":
         split="train",
         cache_dir='/scratch/ccm7752/dataset_cache'
     )
-    
+    print("Data loaded! About to preprocess and save", flush=True)
     # Create save directory
     save_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
     os.makedirs(save_dir, exist_ok=True)
