@@ -51,6 +51,16 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         self.returns_by_year = returns_by_year
         self.sp500_by_year = sp500_by_year
         self.tokenizer = tokenizer
+
+        # Precompute next_dates for all articles
+        self.next_dates = {}  # map article idx to next trading date
+        for idx in range(len(articles_dataset)):
+            article = articles_dataset[idx]
+            date = article['Date'].split()[0]
+            year = date[:4]
+            year_dates = returns_by_year[year].index
+            next_date = year_dates[year_dates > date][0]
+            self.next_dates[idx] = next_date
         
         # Create master list of all unique stocks across all years
         self.all_stocks = sorted(list(set().union(*sp500_by_year.values())))
@@ -71,11 +81,7 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         date = article['Date'].split()[0] # should be YYYY-MM-DD
         year = date[:4]
         
-        # Get all dates in this year's returns DataFrame
-        year_dates = self.returns_by_year[year].index
-        
-        # Find the next available date after the article date
-        next_date = year_dates[year_dates > date][0]
+        next_date = self.next_dates[idx]
 
         # Get indices for this year's SP500 stocks
         stock_indices = self.year_stock_indices[year]
