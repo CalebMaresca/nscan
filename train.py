@@ -284,7 +284,7 @@ class Trainer:
             self.optimizer.zero_grad()
             
             # Forward pass with AMP
-            with autocast():
+            with autocast(device_type=self.device):
                 predictions, confidences = self.model(
                     input={
                         'input_ids': device_batch['input_ids'],
@@ -334,7 +334,7 @@ class Trainer:
             for batch in self.val_loader:
                 device_batch = self.move_batch(batch)
                 
-                with autocast():
+                with autocast(device_type=self.device):
                     predictions, confidences = self.model(
                         input={
                             'input_ids': device_batch['input_ids'],
