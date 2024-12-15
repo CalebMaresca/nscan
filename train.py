@@ -46,10 +46,10 @@ def load_data(years, data_dir):
             columns='PERMNO', 
             values='DlyRet'
         ).sort_index(axis=1)  # Sort columns (PERMNOs)
-        returns_by_year[year] = returns_df
+        returns_by_year[str(year)] = returns_df
         
         # Get unique sorted PERMNOs for this year
-        sp500_by_year[year] = sorted(df['PERMNO'].unique().tolist())
+        sp500_by_year[str(year)] = sorted(df['PERMNO'].unique().tolist())
         
     return returns_by_year, sp500_by_year
 
