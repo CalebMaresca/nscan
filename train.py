@@ -386,9 +386,7 @@ def train_model(config, checkpoint_dir=None):
     trainer.train()
 
 
-
-
-if __name__ == "__main__":
+def main():
     import ray
 
     os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
@@ -396,6 +394,31 @@ if __name__ == "__main__":
     os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
     os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
 
+    # Load tokenizer
+    encoder_name = "FinText/FinText-Base-2007"
+    tokenizer = AutoTokenizer.from_pretrained(encoder_name)
+
+    # Load data
+    years = range(2006, 2023)
+    returns_by_year, sp500_by_year = load_data(years, "/home/ccm7752/DL_Systems/nscan/data")
+    articles_path = os.path.join("/home/ccm7752/DL_Systems/nscan/data", "raw", "FNSPID-date-corrected.csv")
+    articles_dataset = load_dataset(
+        "csv", 
+        data_files=articles_path, 
+        split="train",
+        cache_dir='/scratch/ccm7752/dataset_cache'
+    )
+   
+    # Create dataset splits once
+    train_dataset, val_dataset, test_dataset = create_dataset_splits(
+        articles_dataset, 
+        returns_by_year, 
+        sp500_by_year,
+        tokenizer,
+        val_start_year=2019,
+        test_start_year=2021
+    )
+    
     # Get number of GPUs from SLURM environment variable
     num_gpus = int(os.environ.get('SLURM_GPUS', 4))  # Default to 4 if not in SLURM
 
@@ -412,14 +435,13 @@ if __name__ == "__main__":
         "num_pred_layers": tune.choice([2, 3, 4]),
         "attn_dropout": tune.uniform(0.1, 0.3),
         "ff_dropout": tune.uniform(0.1, 0.3),
-        "encoder_name": "FinText/FinText-Base-2007",
+        "encoder_name": encoder_name,
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
         "batch_size": tune.choice([16, 32, 64]),
         "max_length": 512,  # Fixed
         "num_epochs": 1,  # Fixed
-        "validation_freq": 1000,
-        "data_dir": "/home/ccm7752/DL_Systems/nscan/data"
+        "validation_freq": 1000
     }
 
     # Initialize ASHA scheduler
@@ -436,6 +458,16 @@ if __name__ == "__main__":
         metric="val_loss",
         mode="min"
     )
+
+    # Define train_model function for Ray Tune
+    def train_model(config, train_dataset=train_dataset, val_dataset=val_dataset):
+        trainer = Trainer(
+            config=config,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            tokenizer=tokenizer
+        )
+        return trainer.train()
 
     # Start tuning
     analysis = tune.run(
@@ -458,3 +490,7 @@ if __name__ == "__main__":
     print("Best config:", analysis.get_best_config(metric="val_loss", mode="min"))
 
     ray.shutdown()
+
+
+if __name__ == "__main__":
+    main()
