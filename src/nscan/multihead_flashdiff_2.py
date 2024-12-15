@@ -60,54 +60,57 @@ class MultiheadFlashDiff2(nn.Module):
         encoder_out=None,
         rel_pos=None,
     ):
-        bsz, tgt_len, embed_dim = x.size()
+        batch_size, tgt_len, embed_dim = x.size()
         
         # For cross-attention, use encoder_out length as source length
         if encoder_out is not None:
             src_len = encoder_out.size(1)
             # Project decoder input (x) to queries
-            q = self.q_proj(x)
+            q = self.q_proj(x)          # (batch_size, tgt_len, embed_dim)
             # Project encoder output to keys and values
-            k = self.k_proj(encoder_out)
-            v = self.v_proj(encoder_out)
+            k = self.k_proj(encoder_out)  # (batch_size, src_len, embed_dim)
+            v = self.v_proj(encoder_out)  # (batch_size, src_len, embed_dim)
         else:
             # Original self-attention case
             src_len = tgt_len
-            q = self.q_proj(x)
-            k = self.k_proj(x)
-            v = self.v_proj(x)
+            q = self.q_proj(x)          # (batch_size, tgt_len, embed_dim)
+            k = self.k_proj(x)          # (batch_size, src_len, embed_dim)
+            v = self.v_proj(x)          # (batch_size, src_len, embed_dim)
 
-        q = q.view(bsz, tgt_len, 2 * self.num_heads, self.head_dim)
-        k = k.view(bsz, src_len, 2 * self.num_heads, self.head_dim)
-        v = v.view(bsz, src_len, self.num_heads, 2 * self.head_dim)
+        # We manipulate the Tensors twice to allow for applying positional embeddings
+        # Since we aren't using positional embeddings, we could simplify this
+        # Note: embed_dim = num_heads * head_dim * 2
+        q = q.view(batch_size, tgt_len, 2 * self.num_heads, self.head_dim)  # (batch_size, tgt_len, 2*num_heads, head_dim)
+        k = k.view(batch_size, src_len, 2 * self.num_heads, self.head_dim)  # (batch_size, src_len, 2*num_heads, head_dim)
+        v = v.view(batch_size, src_len, self.num_heads, 2, self.head_dim)  # (batch_size, src_len, num_heads, 2, head_dim)
 
         # if rel_pos is not None:
         #     q = apply_rotary_emb(q, *rel_pos, interleaved=True)
         #     k = apply_rotary_emb(k, *rel_pos, interleaved=True)
 
-        offset = src_len - tgt_len
-        q = q.reshape(bsz, tgt_len, self.num_heads, 2, self.head_dim)
-        k = k.reshape(bsz, src_len, self.num_heads, 2, self.head_dim)
-        q1, q2 = q[:, :, :, 0], q[:, :, :, 1]
-        k1, k2 = k[:, :, :, 0], k[:, :, :, 1]
-        v1, v2 = v[:, :, :, 0], v[:, :, :, 1]
+        # Reshape for splitting into two attention mechanisms
+        q = q.reshape(batch_size, tgt_len, self.num_heads, 2, self.head_dim)  # (batch_size, tgt_len, num_heads, 2, head_dim)
+        k = k.reshape(batch_size, src_len, self.num_heads, 2, self.head_dim)  # (batch_size, src_len, num_heads, 2, head_dim)
+        q1, q2 = q[:, :, :, 0], q[:, :, :, 1]  # Each: (batch_size, tgt_len, num_heads, head_dim)
+        k1, k2 = k[:, :, :, 0], k[:, :, :, 1]  # Each: (batch_size, src_len, num_heads, head_dim)
+        v1, v2 = v[:, :, :, 0], v[:, :, :, 1]  # Each: (batch_size, src_len, num_heads, head_dim)
 
-        attn11 = flash_attn_func(q1, k1, v1, causal=False)
-        attn12 = flash_attn_func(q1, k1, v2, causal=False)
-        attn1 = torch.cat([attn11, attn12], dim=-1)
+        attn11 = flash_attn_func(q1, k1, v1, causal=False)  # (batch_size, tgt_len, num_heads, head_dim)
+        attn12 = flash_attn_func(q1, k1, v2, causal=False)  # (batch_size, tgt_len, num_heads, head_dim)
+        attn1 = torch.cat([attn11, attn12], dim=-1)  # (batch_size, tgt_len, num_heads, 2 * head_dim)
         
-        attn21 = flash_attn_func(q2, k2, v1, causal=False)
-        attn22 = flash_attn_func(q2, k2, v2, causal=False)
-        attn2 = torch.cat([attn21, attn22], dim=-1)
+        attn21 = flash_attn_func(q2, k2, v1, causal=False)  # (batch_size, tgt_len, num_heads, head_dim)
+        attn22 = flash_attn_func(q2, k2, v2, causal=False)  # (batch_size, tgt_len, num_heads, head_dim)
+        attn2 = torch.cat([attn21, attn22], dim=-1)  # (batch_size, tgt_len, num_heads, 2 * head_dim)
         
         lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(q)
         lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(q)
         lambda_full = lambda_1 - lambda_2 + self.lambda_init
-        attn = attn1 - lambda_full * attn2
+        attn = attn1 - lambda_full * attn2  # (batch_size, tgt_len, num_heads, 2*head_dim)
 
-        attn = self.subln(attn)
-        attn = attn * (1 - self.lambda_init)
-        attn = attn.reshape(bsz, tgt_len, self.num_heads * 2 * self.head_dim)
+        attn = self.subln(attn)  # (batch_size, tgt_len, num_heads, 2*head_dim)
+        attn = attn * (1 - self.lambda_init)  # (batch_size, tgt_len, num_heads, 2*head_dim)
+        attn = attn.reshape(batch_size, tgt_len, self.num_heads * 2 * self.head_dim)  # (batch_size, tgt_len, embed_dim = num_heads * 2 * head_dim)
         
-        attn = self.out_proj(attn)
+        attn = self.out_proj(attn)  # (batch_size, tgt_len, embed_dim)
         return attn
