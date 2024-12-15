@@ -363,7 +363,7 @@ def train_model(config, checkpoint_dir=None):
     years = range(2006, 2023)
     returns_by_year, sp500_by_year = load_data(years, os.path.join(config["data_dir"], "returns"))
     articles_path = os.path.join(config["data_dir"], "raw", "FNSPID-date-corrected.csv")
-    articles_dataset = load_dataset("csv", data_files=articles_path, split="train")
+    articles_dataset = load_dataset("csv", data_files=articles_path, split="train", cache_dir='/scratch/ccm7752/dataset_cache')
     train_dataset, val_dataset, test_dataset = create_dataset_splits(
         articles_dataset,
         returns_by_year,
@@ -390,6 +390,11 @@ def train_model(config, checkpoint_dir=None):
 
 if __name__ == "__main__":
     import ray
+
+    os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
+    os.environ['TRANSFORMERS_CACHE'] = '/scratch/ccm7752/huggingface_cache'
+    os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
+    os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
 
     # Get number of GPUs from SLURM environment variable
     num_gpus = int(os.environ.get('SLURM_GPUS', 4))  # Default to 4 if not in SLURM
