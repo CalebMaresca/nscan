@@ -24,6 +24,10 @@ def load_data(years, data_dir):
         # Load returns DataFrame for this year
         file_path = os.path.join(data_dir, f"{year}_returns.csv")
         df = pd.read_csv(file_path)
+
+        # Check raw data before pivot
+        print(f"\nYear {year}:")
+        print(f"Raw data NaN count: {df['DlyRet'].isna().sum()}")
         
         # Pivot the data to get dates as rows and PERMNOs as columns
         returns_df = df.pivot(
@@ -31,8 +35,16 @@ def load_data(years, data_dir):
             columns='PERMNO', 
             values='DlyRet'
         ).sort_index(axis=1)  # Sort columns (PERMNOs)
-        returns_by_year[str(year)] = returns_df
+
+        # Check pivoted data
+        print(f"Pivoted data NaN count: {returns_df.isna().sum().sum()}")
+        print(f"Total cells: {returns_df.size}")
+        print(f"NaN percentage: {(returns_df.isna().sum().sum() / returns_df.size) * 100:.2f}%")
+
+        # Fill NaN values with 0 (or another appropriate value)
+        returns_df = returns_df.fillna(0)
         
+        returns_by_year[str(year)] = returns_df
         # Get unique sorted PERMNOs for this year
         sp500_by_year[str(year)] = sorted(df['PERMNO'].unique().tolist())
         
@@ -88,6 +100,12 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         
         # Get returns for this year's stocks
         returns = self.returns_by_year[year].loc[next_date].values
+
+        # Check for NaN values
+        if np.isnan(returns).any():
+            print(f"Warning: NaN returns found for date {next_date}")
+            # Fill NaN values with 0 or another appropriate value
+            returns = np.nan_to_num(returns, 0.0)
 
         # Tokenize article
         inputs = self.tokenizer(
