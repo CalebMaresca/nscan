@@ -446,7 +446,7 @@ def main():
     )
     
     # Get number of GPUs from SLURM environment variable
-    num_gpus = int(os.environ.get('SLURM_GPUS', 4))  # Default to 4 if not in SLURM
+    num_gpus = torch.cuda.device_count()
 
     # Initialize Ray with proper resources
     ray.init(
