@@ -75,11 +75,7 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         year_dates = self.returns_by_year[year].index
         
         # Find the next available date after the article date
-        next_dates = year_dates[year_dates > date]
-        if len(next_dates) == 0:
-            return None  # No future dates available in this year
-            
-        next_date = next_dates[0]  # Get the first future date
+        next_date = year_dates[year_dates > date][0]
 
         # Get indices for this year's SP500 stocks
         stock_indices = self.year_stock_indices[year]
@@ -119,18 +115,34 @@ def create_dataset_splits(articles_dataset, returns_by_year, sp500_by_year, toke
     Returns:
         train_dataset, val_dataset, test_dataset
     """
+    def is_valid_article(article):
+        # Filter out articles that don't have returns data for the year or next day returns
+        date = article['Date'].split()[0]
+        year = date[:4]
+        
+        # First check if we have returns data for this year
+        if year not in returns_by_year:
+            return False
+            
+        # Check for next-day returns
+        year_dates = returns_by_year[year].index
+        next_dates = year_dates[year_dates > date]
+        if len(next_dates) == 0:
+            return False
+            
+        return True
     
     # Split articles by year
     train_articles = articles_dataset.filter(
-        lambda x: int(x['Date'][:4]) < val_start_year
+        lambda x: is_valid_article(x) and int(x['Date'][:4]) < val_start_year
     )
     
     val_articles = articles_dataset.filter(
-        lambda x: val_start_year <= int(x['Date'][:4]) < test_start_year
+        lambda x: is_valid_article(x) and val_start_year <= int(x['Date'][:4]) < test_start_year
     )
     
     test_articles = articles_dataset.filter(
-        lambda x: int(x['Date'][:4]) >= test_start_year
+        lambda x: is_valid_article(x) and int(x['Date'][:4]) >= test_start_year
     )
     
     # Create datasets
