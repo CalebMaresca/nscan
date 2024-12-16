@@ -216,22 +216,19 @@ def main():
     import ray
 
     # For HPC
-    # wandb_api_key = os.getenv("WANDB_API_KEY")
-    # data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
-    # ray_results_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/ray_results")
-
-    # os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
-    # os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
-    # os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
+    wandb_api_key = os.getenv("WANDB_API_KEY")
+    data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
+    ray_results_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/ray_results")
+    num_cpus_per_trial = 4
+    os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
+    os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
+    os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
 
     # For local
-    wandb_api_key = os.getenv("WANDB_API_KEY")
-    data_dir = os.path.abspath("data/preprocessed_datasets")
-    ray_results_dir = os.path.abspath("logs/ray_results")
-    # Create the logs directory if it doesn't exist
-    os.makedirs(ray_results_dir, exist_ok=True)
-
-    num_cpus_per_trial = 8
+    # data_dir = os.path.abspath("data/preprocessed_datasets")
+    # ray_results_dir = os.path.abspath("logs/ray_results")
+    # os.makedirs(ray_results_dir, exist_ok=True)
+    # num_cpus_per_trial = 8
 
     train_dataset, val_dataset, _, metadata = load_preprocessed_datasets(data_dir)
     
@@ -257,11 +254,11 @@ def main():
         "encoder_name": metadata["tokenizer_name"],
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "batch_size": tune.choice([2,4]),
+        "batch_size": tune.choice([16]),
         "max_length": metadata["max_length"],  # Fixed
         "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
-        "validation_freq": 10
+        "validation_freq": 100
     }
 
     # Initialize ASHA scheduler
@@ -297,7 +294,7 @@ def main():
         scheduler=scheduler,
         search_alg=search_alg,
         num_samples=8,  # Total trials
-        resources_per_trial={"gpu": 0.5, "cpu": num_cpus_per_trial},
+        resources_per_trial={"gpu": 1, "cpu": num_cpus_per_trial},
         callbacks=[WandbLoggerCallback(
             project="stock-predictor",
             api_key=wandb_api_key,

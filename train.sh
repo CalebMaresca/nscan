@@ -3,7 +3,7 @@
 #SBATCH --nodes=1                # Request one node
 #SBATCH --ntasks-per-node=1      # Run 1 tasks (one per GPU)
 #SBATCH --gres=gpu:1        # Request 1 GPU
-#SBATCH --cpus-per-task=6        # 6 CPU cores per task
+#SBATCH --cpus-per-task=5        # 6 CPU cores per task
 #SBATCH --mem=16G                # Request 16GB of memory
 #SBATCH --time=0:30:00          # Time limit of 30 minutes
 #SBATCH --output=logs/%x-%j.out       # Output file: jobname-jobid.out
