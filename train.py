@@ -157,12 +157,23 @@ class Trainer:
             
         return total_loss / len(self.train_loader)
     
-    def validate(self):
+    def validate(self, full_validation=False, num_batches=5):  # num_batches default can be adjusted
         self.model.eval()
         total_loss = 0
         
+        if not full_validation:
+            # Get total number of batches in val_loader
+            total_batches = len(self.val_loader)
+            # Randomly select batch indices
+            batch_indices = torch.randperm(total_batches)[:num_batches]
+            batch_indices = sorted(batch_indices.tolist())  # Sort for efficiency
+        
         with torch.no_grad():
-            for batch in self.val_loader:
+            for batch_idx, batch in enumerate(self.val_loader):
+                # Skip batches not in our random selection during partial validation
+                if not full_validation and batch_idx not in batch_indices:
+                    continue
+                    
                 device_batch = self.move_batch(batch)
                 
                 with autocast(device_type=self.device):
@@ -176,8 +187,14 @@ class Trainer:
                     
                     loss = confidence_weighted_loss(predictions, device_batch['returns'], confidences)
                     total_loss += loss.item()
+                
+                # Break early if we've processed all our selected batches
+                if not full_validation and batch_idx > batch_indices[-1]:
+                    break
         
-        return total_loss / len(self.val_loader)
+        # Divide by actual number of batches processed
+        divisor = len(self.val_loader) if full_validation else num_batches
+        return total_loss / divisor
     
     def train(self):
         best_val_loss = float('inf')
@@ -188,7 +205,7 @@ class Trainer:
             start_time = datetime.now()
 
             train_loss = self.train_epoch()
-            val_loss = self.validate()
+            val_loss = self.validate(full_validation=True)
             self.scheduler.step()
             
             # Save best model
