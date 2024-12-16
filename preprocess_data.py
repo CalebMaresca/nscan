@@ -1,9 +1,11 @@
 import os
 import pandas as pd
 import numpy as np
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, DatasetDict, load_dataset, concatenate_datasets
 import torch
 from transformers import AutoTokenizer
+import gc
+import shutil
 
 def load_returns_and_sp500_data(years, data_dir):
     # Load returns data by year
@@ -97,6 +99,48 @@ def create_process_function(returns_by_year, year_stock_indices, tokenizer, max_
 
     return process_batch
 
+def preprocess_in_chunks(articles_dataset, process_batch, chunk_size=100000, temp_dir="/tmp/processing"):
+    os.makedirs(temp_dir, exist_ok=True)
+    total_len = len(articles_dataset)
+    chunk_paths = []
+    
+    print(f"Processing {total_len} articles in chunks of {chunk_size}")
+    
+    for i in range(0, total_len, chunk_size):
+        print(f"\nProcessing chunk {i//chunk_size + 1}/{(total_len+chunk_size-1)//chunk_size}")
+        
+        # Process chunk
+        chunk = articles_dataset.select(range(i, min(i + chunk_size, total_len)))
+        processed_chunk = chunk.map(
+            process_batch,
+            batched=True,
+            batch_size=100,
+            remove_columns=chunk.column_names,
+            desc=f"Processing articles {i}-{min(i + chunk_size, total_len)}"
+        )
+        
+        # Save chunk to disk
+        chunk_path = os.path.join(temp_dir, f"chunk_{i}.dataset")
+        processed_chunk.save_to_disk(chunk_path)
+        chunk_paths.append(chunk_path)
+        
+        # Clear memory
+        del chunk
+        del processed_chunk
+        gc.collect()
+    
+    print("\nCombining chunks...")
+    # Load and combine all chunks
+    all_chunks = [Dataset.load_from_disk(path) for path in chunk_paths]
+    final_dataset = concatenate_datasets(all_chunks)
+    
+    print("Cleaning up temporary files...")
+    # Clean up temporary files
+    for path in chunk_paths:
+        shutil.rmtree(path)
+    
+    return final_dataset
+
 def preprocess_and_save(
     articles_dataset,
     returns_by_year,
@@ -128,13 +172,11 @@ def preprocess_and_save(
 
     print("Processing articles...", flush=True)
     # Process all articles using HF's parallel processing
-    processed_dataset = articles_dataset.map(
-        process_batch,
-        batched=True,
-        batch_size=100,  # Adjust based on memory
-        num_proc=4,      # Match your CPU cores
-        remove_columns=articles_dataset.column_names,
-        desc="Processing articles"
+    processed_dataset = preprocess_in_chunks(
+        articles_dataset, 
+        process_batch, 
+        chunk_size=100000,  # Adjust this based on memory constraints
+        temp_dir = os.path.join(os.environ['SCRATCH'], "temp_processing")
     )
 
     print("Splitting dataset...", flush=True)
