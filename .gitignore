@@ -31,9 +31,8 @@ env/
 *.swo
 
 # Project specific
-data/raw/*
+data/
 !data/raw/.gitkeep
-data/returns/*
 logs/
 *.pth
 *.ckpt
