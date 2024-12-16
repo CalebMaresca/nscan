@@ -56,7 +56,9 @@ class Trainer:
             shuffle=True,
             collate_fn=collate_fn,
             num_workers=4,
-            pin_memory=True if self.device == "cuda" else False
+            pin_memory=True if self.device == "cuda" else False,
+            prefetch_factor=2,  # Number of batches loaded in advance by each worker
+            persistent_workers=True  # Keep worker processes alive between epochs
         )
         
         self.val_loader = DataLoader(
@@ -65,7 +67,9 @@ class Trainer:
             shuffle=False,
             collate_fn=collate_fn,
             num_workers=4,
-            pin_memory=True if self.device == "cuda" else False
+            pin_memory=True if self.device == "cuda" else False,
+            prefetch_factor=2,  # Number of batches loaded in advance by each worker
+            persistent_workers=True  # Keep worker processes alive between epochs
         )
 
         self.max_length = config["max_length"]
@@ -271,7 +275,7 @@ def main():
         "encoder_name": metadata["tokenizer_name"],
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "batch_size": tune.choice([16]),
+        "batch_size": tune.choice([32]),
         "max_length": metadata["max_length"],  # Fixed
         "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
