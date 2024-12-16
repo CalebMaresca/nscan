@@ -311,7 +311,7 @@ def main():
         "encoder_name": metadata["tokenizer_name"],
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "batch_size": tune.choice([32]),
+        "batch_size": tune.choice([128]),
         "max_length": metadata["max_length"],  # Fixed
         "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
@@ -337,11 +337,16 @@ def main():
     def train_model(config):
         train_dataset = ray.get(train_dataset_ref)
         val_dataset = ray.get(val_dataset_ref)
+
+        trial_params = f"lrs{config['num_decoder_layers']}_heads{config['num_heads']}_predlrs{config['num_pred_layers']}attndrop{config['attn_dropout']:.2e}_ffdrop{config['ff_dropout']:.2e}_lr{config['lr']:.2e}_dec{config['weight_decay']:.2e}_bat{config['batch_size']}"
+        checkpoint_dir = os.path.join(os.environ['SCRATCH'], 'DL_Systems/project/checkpoints', 
+                                    f'trial_{trial_params}')
+
         trainer = Trainer(
             config=config,
             train_dataset=train_dataset,
             val_dataset=val_dataset,
-            checkpoint_dir=os.path.join(os.environ['SCRATCH'], 'DL_Systems/project/checkpoints', f'trial_{train.get_trial_name()}')
+            checkpoint_dir=checkpoint_dir
         )
         return trainer.train()
 
