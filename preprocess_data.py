@@ -185,7 +185,7 @@ if __name__ == "__main__":
 
     # Load data
     print("Loading data...", flush=True)
-    years = range(2006, 2023)
+    years = range(2006, 2024)
     data_dir = "/home/ccm7752/DL_Systems/nscan/data"
     returns_by_year, sp500_by_year = load_returns_and_sp500_data(years, os.path.join(data_dir, "returns"))
     
