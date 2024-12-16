@@ -12,28 +12,8 @@ from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.air.integrations.wandb import WandbLoggerCallback
 from src.nscan.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
+from dataset import NewsReturnDataset, collate_fn
 
-
-class NewsReturnDataset(torch.utils.data.Dataset):
-    def __init__(self, preprocessed_dataset):
-        """
-        Args:
-            preprocessed_dataset: HF dataset with preprocessed articles
-        """
-        self.articles = preprocessed_dataset
-        
-    def __len__(self):
-        return len(self.articles)
-        
-    def __getitem__(self, idx):
-        article = self.articles[idx]
-        
-        return {
-            'input_ids': torch.tensor(article['input_ids']),
-            'attention_mask': torch.tensor(article['attention_mask']),
-            'stock_indices': torch.tensor(article['stock_indices']),
-            'returns': torch.tensor(article['returns'], dtype=torch.float32)
-        }
 
 def load_preprocessed_datasets(data_dir):
     # Load the preprocessed datasets
@@ -46,42 +26,6 @@ def load_preprocessed_datasets(data_dir):
     test_dataset = NewsReturnDataset(dataset_dict['test'])
     
     return train_dataset, val_dataset, test_dataset, metadata
-
-def collate_fn(batch):
-    # Filter out None values
-    batch = [b for b in batch if b is not None]
-    
-    # Find maximum number of stocks in this batch
-    max_stocks = max(b['stock_indices'].size(0) for b in batch)
-    
-    # Pad stock indices and returns
-    padded_indices = []
-    padded_returns = []
-    
-    for b in batch:
-        num_stocks = b['stock_indices'].size(0)
-        # Pad stock indices with 0
-        padded_idx = torch.nn.functional.pad(
-            b['stock_indices'], 
-            (0, max_stocks - num_stocks), 
-            value=0
-        )
-        padded_indices.append(padded_idx)
-        
-        # Pad returns with 0
-        padded_ret = torch.nn.functional.pad(
-            b['returns'], 
-            (0, max_stocks - num_stocks), 
-            value=0.0
-        )
-        padded_returns.append(padded_ret)
-    
-    return {
-        'input_ids': torch.stack([b['input_ids'] for b in batch]),
-        'attention_mask': torch.stack([b['attention_mask'] for b in batch]),
-        'stock_indices': torch.stack(padded_indices),
-        'returns': torch.stack(padded_returns)
-    }
 
 class Trainer:
     def __init__(
@@ -271,13 +215,25 @@ class Trainer:
 def main():
     import ray
 
-    os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
-    os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
-    os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
+    # For HPC
+    # wandb_api_key = os.getenv("WANDB_API_KEY")
+    # data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
+    # ray_results_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/ray_results")
 
-    train_dataset, val_dataset, test_dataset, metadata = load_preprocessed_datasets(
-        os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
-    )
+    # os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
+    # os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
+    # os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
+
+    # For local
+    wandb_api_key = os.getenv("WANDB_API_KEY")
+    data_dir = os.path.abspath("data/preprocessed_datasets")
+    ray_results_dir = os.path.abspath("logs/ray_results")
+    # Create the logs directory if it doesn't exist
+    os.makedirs(ray_results_dir, exist_ok=True)
+
+    num_cpus_per_trial = 8
+
+    train_dataset, val_dataset, _, metadata = load_preprocessed_datasets(data_dir)
     
     # Get number of GPUs from SLURM environment variable
     num_gpus = torch.cuda.device_count()
@@ -287,6 +243,9 @@ def main():
         num_gpus=num_gpus,  # Specify number of GPUs available
         log_to_driver=True,  # Enable logging
     )
+
+    train_dataset_ref = ray.put(train_dataset)
+    val_dataset_ref = ray.put(val_dataset)
 
     # Define search space
     config = {
@@ -298,11 +257,11 @@ def main():
         "encoder_name": metadata["tokenizer_name"],
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "batch_size": tune.choice([16,32]),
+        "batch_size": tune.choice([2,4]),
         "max_length": metadata["max_length"],  # Fixed
         "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
-        "validation_freq": 100
+        "validation_freq": 10
     }
 
     # Initialize ASHA scheduler
@@ -321,7 +280,9 @@ def main():
     )
 
     # Define train_model function for Ray Tune
-    def train_model(config, train_dataset=train_dataset, val_dataset=val_dataset):
+    def train_model(config):
+        train_dataset = ray.get(train_dataset_ref)
+        val_dataset = ray.get(val_dataset_ref)
         trainer = Trainer(
             config=config,
             train_dataset=train_dataset,
@@ -330,21 +291,21 @@ def main():
         return trainer.train()
 
     # Start tuning
-    ray_results_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/ray_results")
     analysis = tune.run(
         train_model,
         config=config,
         scheduler=scheduler,
         search_alg=search_alg,
         num_samples=8,  # Total trials
-        resources_per_trial={"gpu": 1, "cpu": 4},
+        resources_per_trial={"gpu": 0.5, "cpu": num_cpus_per_trial},
         callbacks=[WandbLoggerCallback(
             project="stock-predictor",
-            api_key=os.getenv("WANDB_API_KEY"),
+            api_key=wandb_api_key,
             log_config=True
         )],
         storage_path=ray_results_dir,
-        name="stock_predictor_tune"
+        name="stock_predictor_tune",
+        trial_dirname_creator=lambda trial: f"trial_{trial.trial_id}"  # for local, default is too long
     )
 
     # Print best config
