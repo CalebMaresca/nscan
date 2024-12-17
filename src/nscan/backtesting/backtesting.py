@@ -69,7 +69,7 @@ class NewsBasedStrategy(bt.Strategy):
 
 class ReturnsData(bt.feeds.PandasData):
     """Custom data feed that works with returns instead of prices"""
-    
+    lines = ('returns',)
     params = (
         ('returns', 'Returns'),  # Name of returns column in DataFrame
         ('openinterest', None),  # Not using these fields
