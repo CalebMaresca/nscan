@@ -36,8 +36,8 @@ def get_model_predictions(model, test_dataset, device):
     total_loss = 0
     
     with torch.no_grad():
-        for batch in test_loader:
-                
+        for idx, batch in enumerate(test_loader):
+            print(f"Inferencing batch {idx} of {len(test_loader)}", flush=True)    
             device_batch = move_batch(batch, device)
             
             with autocast(device_type=str(device)):
@@ -75,7 +75,7 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     
     # Load the preprocessed datasets and metadata
     dataset_dict = load_from_disk(os.path.join(data_dir, "preprocessed_datasets"))  # This loads the DatasetDict
-    test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=16)  # Get the test split
+    test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=8)  # Get the test split
 
     # Load checkpoint which contains model state
     checkpoint = torch.load(checkpoint_path)

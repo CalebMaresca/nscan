@@ -5,7 +5,7 @@ import pandas as pd
 
 class NewsBasedStrategy(bt.Strategy):
     params = (
-        ('confidence_threshold', 0.1),
+        ('confidence_threshold', 0.001),
         ('num_stocks', 10)
     )
     
@@ -21,6 +21,8 @@ class NewsBasedStrategy(bt.Strategy):
             predictions = self.predictions_by_date[current_date]
             confidences = self.confidences_by_date[current_date]
             
+            print(f"\nDate: {current_date}")
+            print(f"Portfolio Value: {self.broker.getvalue()}")
             # Combine predictions for the same day using confidence-weighted average
             weighted_predictions = defaultdict(list)
             weighted_confidences = defaultdict(list)
@@ -43,7 +45,7 @@ class NewsBasedStrategy(bt.Strategy):
                 key=lambda x: x[1], 
                 reverse=True
             )
-            
+            #print(sorted_stocks, flush=True)
             # Invest in top N stocks with highest predicted returns
             N = self.p.num_stocks  # Number of stocks to invest in
             total_value = self.broker.getvalue()
@@ -55,15 +57,19 @@ class NewsBasedStrategy(bt.Strategy):
                     self.close(data)
             
             # Open new positions
-            for stock, pred in sorted_stocks[:N]:
+            for stock_idx, pred in sorted_stocks[:N]:
                 if pred > 0:  # Only go long if predicted return is positive
                     try:
-                        stock_data = self.getdatabyname(str(stock))
-                        if stock_data is None:
+                        if stock_idx == '-':
                             continue
+                        idx = int(stock_idx)
+                        stock_data = self.datas[idx]
                         if not math.isnan(stock_data.close[0]):
+                            current_price = stock_data.close[0]
+                            position_value = position_size/current_price
+                            print(f"Buying stock {idx}: {position_value} units at price {current_price}")
                             self.buy(data=stock_data, 
-                                size=position_size/stock_data.close[0])
+                                size=position_value)
                     except Exception as e:
                         print(f"Error trading stock {stock}: {e}")
 
@@ -74,10 +80,6 @@ class ReturnsData(bt.feeds.PandasData):
         ('returns', 'Returns'),  # Name of returns column in DataFrame
         ('openinterest', None),  # Not using these fields
         ('volume', None),
-        ('high', None),
-        ('low', None),
-        ('open', None),
-        ('close', None),
     )
     
     def __init__(self, *args, **kwargs):
@@ -93,6 +95,11 @@ class ReturnsData(bt.feeds.PandasData):
                 self._price *= (1.0 + self.lines.returns[0])
             # Set the close price
             self.lines.close[0] = self._price
+            self.lines.open[0] = self._price
+            self.lines.high[0] = self._price
+            self.lines.low[0] = self._price
+            if math.isnan(self._price):
+                print(f"WARNING: NaN price detected!")
         return ret
 
 def run_backtest(test_results, returns_by_year, sp500_by_year):
@@ -124,7 +131,10 @@ def run_backtest(test_results, returns_by_year, sp500_by_year):
             stock_data = returns_by_year[year][stock]
             if not isinstance(stock_data, pd.DataFrame):
                 stock_data = stock_data.to_frame(name='Returns')
-            
+            # Ensure index is datetime
+            if not isinstance(stock_data.index, pd.DatetimeIndex):
+                stock_data.index = pd.to_datetime(stock_data.index)
+
             data = ReturnsData(
                 dataname=stock_data,
                 name=str(stock),
@@ -153,7 +163,7 @@ def run_backtest(test_results, returns_by_year, sp500_by_year):
     # Handle Sharpe Ratio
     sharpe_analysis = strat.analyzers.sharperatio.get_analysis()
     sharpe_ratio = sharpe_analysis.get('sharperatio', None)
-    print(f'Sharpe Ratio: {sharpe_ratio:.2f if sharpe_ratio is not None else "N/A"}')
+    print(f'Sharpe Ratio: {f"{sharpe_ratio:.2f}" if sharpe_ratio is not None else "N/A"}')
     
     # Handle Returns
     returns_analysis = strat.analyzers.returns.get_analysis()
