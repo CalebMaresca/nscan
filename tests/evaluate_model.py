@@ -2,6 +2,7 @@ import os
 import json
 import math
 import torch
+import numpy as np
 from torch.utils.data import DataLoader
 import backtrader as bt
 import pandas as pd
@@ -289,6 +290,21 @@ def test_model(test_years, checkpoint_path, config_path, data_dir):
     # Get test results
     test_results = evaluate_model(model, test_dataset, device)
     print(f"Test Loss: {test_results['test_loss']:.4f}")
+    
+    # Save results
+    save_dict = {
+        'predictions': test_results['predictions'].numpy(),
+        'confidences': test_results['confidences'].numpy(),
+        'returns': test_results['returns'].numpy(),
+        'dates': test_results['dates'],
+        'stock_indices': test_results['stock_indices'].numpy(),
+        'test_loss': test_results['test_loss']
+    }
+    
+    save_path = os.path.join(data_dir, "evaluation_results.npz")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    np.savez(save_path, **save_dict)
+    print(f"Saved evaluation results to {save_path}")
     
     # Run backtest
     backtest_results = run_backtest(
