@@ -47,16 +47,18 @@ class Trainer:
             ff_dropout=config["ff_dropout"],
             encoder_name=config["encoder_name"]
         ).to(self.device)
-
+        
+        self.model = torch.compile(self.model, mode='max-autotune-no-cudagraphs')
+        
         # Create data loaders
         self.train_loader = DataLoader(
             train_dataset,
             batch_size=config["batch_size"],
             shuffle=True,
             collate_fn=collate_fn,
-            num_workers=4,
+            num_workers=8,
             pin_memory=True if self.device == "cuda" else False,
-            prefetch_factor=4,  # Number of batches loaded in advance by each worker
+            prefetch_factor=8,  # Number of batches loaded in advance by each worker
             persistent_workers=True  # Keep worker processes alive between epochs
         )
         
@@ -67,7 +69,7 @@ class Trainer:
             collate_fn=collate_fn,
             num_workers=4,
             pin_memory=True if self.device == "cuda" else False,
-            prefetch_factor=2,  # Number of batches loaded in advance by each worker
+            prefetch_factor=8,  # Number of batches loaded in advance by each worker
             persistent_workers=True  # Keep worker processes alive between epochs
         )
 
@@ -276,7 +278,7 @@ def main():
     wandb_api_key = os.getenv("WANDB_API_KEY")
     data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
     ray_results_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/ray_results")
-    num_cpus_per_trial = 5
+    num_cpus_per_trial = 14
     os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
     os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
     os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
@@ -303,27 +305,27 @@ def main():
 
     # Define search space
     config = {
-        "num_decoder_layers": tune.choice([2, 3, 4]),
+        "num_decoder_layers": tune.choice([1, 2, 4, 6]),
         "num_heads": tune.choice([4, 6]),
-        "num_pred_layers": tune.choice([2, 3, 4]),
+        "num_pred_layers": tune.choice([1, 2, 3, 4]),
         "attn_dropout": tune.uniform(0.1, 0.3),
         "ff_dropout": tune.uniform(0.1, 0.3),
         "encoder_name": metadata["tokenizer_name"],
         "lr": tune.loguniform(1e-5, 1e-3),
-        "weight_decay": tune.loguniform(1e-6, 1e-4),
-        "batch_size": tune.choice([128]),
+        "weight_decay": tune.loguniform(1e-6, 1e-3),
+        "batch_size": tune.choice([16, 32, 64, 128, 256]),
         "max_length": metadata["max_length"],  # Fixed
         "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
-        "validation_freq": 100
+        "validation_freq": 500
     }
 
     # Initialize ASHA scheduler
     scheduler = ASHAScheduler(
         metric="val_loss",
         mode="min",
-        max_t=10,  # Max epochs
-        grace_period=2,  # Min epochs before pruning
+        max_t=25,  # Max tune.reports
+        grace_period=4,  # Min tune.reports before pruning
         reduction_factor=2
     )
 
@@ -356,7 +358,7 @@ def main():
         config=config,
         scheduler=scheduler,
         search_alg=search_alg,
-        num_samples=8,  # Total trials
+        num_samples=24,  # Total trials
         resources_per_trial={"gpu": 1, "cpu": num_cpus_per_trial},
         callbacks=[WandbLoggerCallback(
             project="stock-predictor",

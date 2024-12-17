@@ -4,7 +4,7 @@
 #SBATCH --output=logs/preprocess_data_%j.out
 #SBATCH --error=logs/preprocess_data_%j.err
 #SBATCH --time=2:00:00
-#SBATCH --mem=64GB
+#SBATCH --mem=256GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:0
 
