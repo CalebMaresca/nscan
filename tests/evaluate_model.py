@@ -299,7 +299,10 @@ def test_model(test_years, checkpoint_path, config_path, data_dir):
 
 if __name__ == "__main__":
     test_years = [2023]
-    checkpoint_path = os.path.abspath("checkpoints/best_model/epoch0_batch19999.pt")
-    config_path = os.path.abspath("checkpoints/best_model/params.json")
-    data_dir = os.path.abspath("data")
+    checkpoint_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/epoch0_batch19999.pt")
+    config_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/params.json")
+    data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/data")
+    #checkpoint_path = os.path.abspath("checkpoints/best_model/epoch0_batch19999.pt")
+    #config_path = os.path.abspath("checkpoints/best_model/params.json")
+    #data_dir = os.path.abspath("data")
     test_model(test_years, checkpoint_path, config_path, data_dir)
