@@ -27,7 +27,7 @@ conda activate py311
 RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/eval/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
-python home/ccm7752/DL_Systems/nscan/tests/evaluate_model.py 2>&1 | tee $RUN_DIR/eval.log
+python tests/evaluate_model.py 2>&1 | tee $RUN_DIR/eval.log
 
 ENDOFCOMMANDS
 
