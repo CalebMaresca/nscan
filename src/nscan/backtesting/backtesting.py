@@ -146,11 +146,23 @@ def run_backtest(test_results, returns_by_year, sp500_by_year):
     # Run backtest
     results = cerebro.run()
     
-    # Print results
+    # Print results with error handling
     strat = results[0]
     print(f'Final Portfolio Value: {cerebro.broker.getvalue():.2f}')
-    print(f'Sharpe Ratio: {strat.analyzers.sharperatio.get_analysis()["sharperatio"]:.2f}')
-    print(f'Return: {strat.analyzers.returns.get_analysis()["rtot"]:.2%}')
-    print(f'Max Drawdown: {strat.analyzers.drawdown.get_analysis()["max"]["drawdown"]:.2%}')
+    
+    # Handle Sharpe Ratio
+    sharpe_analysis = strat.analyzers.sharperatio.get_analysis()
+    sharpe_ratio = sharpe_analysis.get('sharperatio', None)
+    print(f'Sharpe Ratio: {sharpe_ratio:.2f if sharpe_ratio is not None else "N/A"}')
+    
+    # Handle Returns
+    returns_analysis = strat.analyzers.returns.get_analysis()
+    total_return = returns_analysis.get('rtot', None)
+    print(f'Return: {total_return:.2%}' if total_return is not None else 'Return: N/A')
+    
+    # Handle Drawdown
+    drawdown_analysis = strat.analyzers.drawdown.get_analysis()
+    max_drawdown = drawdown_analysis.get('max', {}).get('drawdown', None)
+    print(f'Max Drawdown: {max_drawdown:.2%}' if max_drawdown is not None else 'Max Drawdown: N/A')
     
     return results
