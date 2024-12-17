@@ -1,4 +1,6 @@
 import torch
+from datasets import load_from_disk
+import os
 
 class NewsReturnDataset(torch.utils.data.Dataset):
     def __init__(self, preprocessed_dataset):
@@ -20,6 +22,18 @@ class NewsReturnDataset(torch.utils.data.Dataset):
             'stock_indices': torch.tensor(article['stock_indices']),
             'returns': torch.tensor(article['returns'], dtype=torch.float32)
         }
+
+def load_preprocessed_datasets(data_dir):
+    # Load the preprocessed datasets
+    dataset_dict = load_from_disk(data_dir)
+    metadata = torch.load(os.path.join(data_dir, 'metadata.pt'))
+    
+    # Create custom datasets
+    train_dataset = NewsReturnDataset(dataset_dict['train'])
+    val_dataset = NewsReturnDataset(dataset_dict['validation'])
+    test_dataset = NewsReturnDataset(dataset_dict['test'])
+    
+    return train_dataset, val_dataset, test_dataset, metadata
     
 def collate_fn(batch):
     # Filter out None values

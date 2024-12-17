@@ -8,6 +8,9 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:0
 
+# Set working directory to project root (where src/ is)
+cd $HOME/DL_Systems/nscan
+
 # Set cache directory for huggingface
 export HF_HOME=/scratch/$USER/huggingface_cache
 
@@ -24,7 +27,7 @@ source /ext3/env.sh
 conda activate py311
 
 # Run the preprocessing script
-python $HOME/DL_Systems/nscan/preprocess_data.py
+python -m src.nscan.preprocess_data
 
 ENDOFCOMMANDS
 

@@ -32,6 +32,7 @@ env/
 
 # Project specific
 data/
+checkpoints/
 !data/raw/.gitkeep
 logs/
 *.pth

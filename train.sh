@@ -10,6 +10,9 @@
 #SBATCH --error=logs/%x-%j.err        # Error file: jobname-jobid.err
 #SBATCH --export=ALL             # Export all environment variables
 
+# Set working directory to project root (where src/ is)
+cd $HOME/DL_Systems/nscan
+
 # Print important environment information
 echo "Job ID: $SLURM_JOB_ID"
 echo "Running on node: $SLURMD_NODENAME"
@@ -32,7 +35,7 @@ RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
 # Run the training script and save the dashboard port
-python $HOME/DL_Systems/nscan/train.py 2>&1 | tee $RUN_DIR/train.log
+python -m src.nscan.train.train 2>&1 | tee $RUN_DIR/train.log
 
 ENDOFCOMMANDS
 
