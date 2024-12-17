@@ -20,7 +20,9 @@ class NewsReturnDataset(torch.utils.data.Dataset):
             'input_ids': torch.tensor(article['input_ids']),
             'attention_mask': torch.tensor(article['attention_mask']),
             'stock_indices': torch.tensor(article['stock_indices']),
-            'returns': torch.tensor(article['returns'], dtype=torch.float32)
+            'returns': torch.tensor(article['returns'], dtype=torch.float32),
+            'date': article['date'],
+            'next_date': article['next_date']
         }
 
 def load_preprocessed_datasets(data_dir):
@@ -70,3 +72,38 @@ def collate_fn(batch):
         'stock_indices': torch.stack(padded_indices),
         'returns': torch.stack(padded_returns)
     }
+
+def load_returns_and_sp500_data(years, data_dir):
+    # Load returns data by year
+    returns_by_year = {}
+    sp500_by_year = {}
+    
+    for year in years:
+        # Load returns DataFrame for this year
+        file_path = os.path.join(data_dir, f"{year}_returns.csv")
+        df = pd.read_csv(file_path)
+
+        # Check raw data before pivot
+        print(f"\nYear {year}:")
+        print(f"Raw data NaN count: {df['DlyRet'].isna().sum()}")
+        
+        # Pivot the data to get dates as rows and PERMNOs as columns
+        returns_df = df.pivot(
+            index='DlyCalDt', 
+            columns='PERMNO', 
+            values='DlyRet'
+        ).sort_index(axis=1)  # Sort columns (PERMNOs)
+
+        # Check pivoted data
+        print(f"Pivoted data NaN count: {returns_df.isna().sum().sum()}")
+        print(f"Total cells: {returns_df.size}")
+        print(f"NaN percentage: {(returns_df.isna().sum().sum() / returns_df.size) * 100:.2f}%")
+
+        # Fill NaN values with 0 (or another appropriate value)
+        returns_df = returns_df.fillna(0)
+        
+        returns_by_year[str(year)] = returns_df
+        # Get unique sorted PERMNOs for this year
+        sp500_by_year[str(year)] = sorted(df['PERMNO'].unique().tolist())
+        
+    return returns_by_year, sp500_by_year

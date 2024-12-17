@@ -1,4 +1,4 @@
-from nscan.model import MultiStockPredictor
+from nscan.model.model import MultiStockPredictor
 
 def analyze_model(model):
     """Analyze model parameters and memory usage by component"""

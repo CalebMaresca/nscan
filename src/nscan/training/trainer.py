@@ -4,7 +4,7 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from datetime import datetime
 from ray import train
-from nscan.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
+from nscan.model.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 from nscan.utils.data import collate_fn
 
 class Trainer:
