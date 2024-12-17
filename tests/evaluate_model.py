@@ -22,7 +22,7 @@ def get_model_predictions(model, test_dataset, device):
     model.eval()
     test_loader = DataLoader(
         test_dataset,
-        batch_size=256,
+        batch_size=32,
         shuffle=False,
         collate_fn=collate_fn,
         num_workers=8
@@ -75,7 +75,7 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     
     # Load the preprocessed datasets and metadata
     dataset_dict = load_from_disk(os.path.join(data_dir, "preprocessed_datasets"))  # This loads the DatasetDict
-    test_dataset = NewsReturnDataset(dataset_dict['test'])  # Get the test split
+    test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=16)  # Get the test split
 
     # Load checkpoint which contains model state
     checkpoint = torch.load(checkpoint_path)
@@ -92,7 +92,8 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
         num_pred_layers=best_config["num_pred_layers"],
         attn_dropout=best_config["attn_dropout"],
         ff_dropout=best_config["ff_dropout"],
-        encoder_name=best_config["encoder_name"]
+        encoder_name=best_config["encoder_name"],
+        use_flash=False
     )
     model.load_state_dict(checkpoint['model_state_dict'], strict=False)
     model.to(device)

@@ -3,12 +3,27 @@ from datasets import load_from_disk
 import os
 
 class NewsReturnDataset(torch.utils.data.Dataset):
-    def __init__(self, preprocessed_dataset):
+    def __init__(self, preprocessed_dataset, max_articles_per_day=None):
         """
         Args:
             preprocessed_dataset: HF dataset with preprocessed articles
         """
         self.articles = preprocessed_dataset
+        if max_articles_per_day is not None:
+            # Create a dictionary mapping dates to lists of indices
+            date_to_indices = {}
+            for i, date in enumerate(self.articles['date']):
+                if date not in date_to_indices:
+                    date_to_indices[date] = []
+                date_to_indices[date].append(i)
+            
+            # Collect indices of articles to keep
+            keep_indices = []
+            for date in sorted(date_to_indices.keys()):
+                keep_indices.extend(date_to_indices[date][:max_articles_per_day])
+            
+            # Filter dataset using the collected indices
+            self.articles = self.articles.select(sorted(keep_indices))
         
     def __len__(self):
         return len(self.articles)

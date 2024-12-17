@@ -2,8 +2,8 @@
 #SBATCH --job-name=stock_pred    # Name of the job
 #SBATCH --nodes=1                # Request one node
 #SBATCH --ntasks-per-node=1      # Run 1 task
-#SBATCH --gres=gpu:a100:1        # Request 1 A100 GPUs
-#SBATCH --cpus-per-task=16        # 16 CPU cores per task
+#SBATCH --gres=gpu:1        # Request 1 GPU
+#SBATCH --cpus-per-task=10        # 10 CPU cores per task
 #SBATCH --mem=16G                # Request 16GB of memory
 #SBATCH --time=0:30:00          # Time limit of 30 minutes
 #SBATCH --output=logs/%x-%j.out       # Output file: jobname-jobid.out
