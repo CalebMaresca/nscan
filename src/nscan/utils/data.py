@@ -70,7 +70,9 @@ def collate_fn(batch):
         'input_ids': torch.stack([b['input_ids'] for b in batch]),
         'attention_mask': torch.stack([b['attention_mask'] for b in batch]),
         'stock_indices': torch.stack(padded_indices),
-        'returns': torch.stack(padded_returns)
+        'returns': torch.stack(padded_returns),
+        'date': [b['date'] for b in batch],
+        'next_date': [b['next_date'] for b in batch]
     }
 
 def load_returns_and_sp500_data(years, data_dir):
