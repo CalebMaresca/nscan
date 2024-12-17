@@ -6,7 +6,7 @@ import backtrader as bt
 import pandas as pd
 from collections import defaultdict
 from datasets import load_from_disk
-from nscan.dataset import collate_fn, NewsReturnDataset
+from nscan.utils.data import collate_fn, NewsReturnDataset
 from nscan.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 from torch.amp import autocast
 
