@@ -1,6 +1,7 @@
 import torch
 from datasets import load_from_disk
 import os
+import pandas as pd
 
 class NewsReturnDataset(torch.utils.data.Dataset):
     def __init__(self, preprocessed_dataset, max_articles_per_day=None):
