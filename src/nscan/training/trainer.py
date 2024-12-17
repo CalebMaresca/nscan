@@ -30,16 +30,18 @@ class Trainer:
             ff_dropout=config["ff_dropout"],
             encoder_name=config["encoder_name"]
         ).to(self.device)
-
+        
+        self.model = torch.compile(self.model, mode='max-autotune-no-cudagraphs')
+        
         # Create data loaders
         self.train_loader = DataLoader(
             train_dataset,
             batch_size=config["batch_size"],
             shuffle=True,
             collate_fn=collate_fn,
-            num_workers=4,
+            num_workers=8,
             pin_memory=True if self.device == "cuda" else False,
-            prefetch_factor=4,  # Number of batches loaded in advance by each worker
+            prefetch_factor=8,  # Number of batches loaded in advance by each worker
             persistent_workers=True  # Keep worker processes alive between epochs
         )
         
@@ -50,7 +52,7 @@ class Trainer:
             collate_fn=collate_fn,
             num_workers=4,
             pin_memory=True if self.device == "cuda" else False,
-            prefetch_factor=2,  # Number of batches loaded in advance by each worker
+            prefetch_factor=8,  # Number of batches loaded in advance by each worker
             persistent_workers=True  # Keep worker processes alive between epochs
         )
 
@@ -250,3 +252,4 @@ class Trainer:
             print(f"Val Loss: {val_loss:.4f}")
             print(f"Best Val Loss: {best_val_loss:.4f}")
             print("-" * 50)
+

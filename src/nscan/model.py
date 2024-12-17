@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from transformers import AutoModel #, AutoTokenizer
 from typing import Tuple
-from .multihead_diff_2 import MultiheadDiff2
+from .multihead_diff_2 import MultiheadFlashDiff2
 
 
 class StockSelectionHead(nn.Module):
@@ -31,14 +31,14 @@ class CustomDecoderLayer(nn.Module):
         super().__init__()
         
         # Cross attention (to attend to encoded text)
-        self.cross_attention = MultiheadDiff2(
+        self.cross_attention = MultiheadFlashDiff2(
             embed_dim=hidden_dim,
             depth=depth,
             num_heads=num_heads
         )
         
         # Non-causal self attention (stocks attending to each other)
-        self.self_attention = MultiheadDiff2(
+        self.self_attention = MultiheadFlashDiff2(
             embed_dim=hidden_dim,
             depth=depth,
             num_heads=num_heads
