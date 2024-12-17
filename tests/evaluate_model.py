@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import torch
 from torch.utils.data import DataLoader
 import backtrader as bt
@@ -36,7 +37,7 @@ def evaluate_model(model, test_dataset, device):
     total_loss = 0
     
     with torch.no_grad():
-            for batch_idx, batch in enumerate(test_loader):
+            for batch in test_loader:
                     
                 device_batch = move_batch(batch, device)
                 
@@ -51,21 +52,6 @@ def evaluate_model(model, test_dataset, device):
                     
                     loss = confidence_weighted_loss(predictions, device_batch['returns'], confidences)
                     total_loss += loss.item()
-    # with torch.no_grad():
-    #     for batch in test_loader:
-    #         device_batch = {k: v.to(device) if isinstance(v, torch.Tensor) 
-    #                       else v for k, v in batch.items()}
-            
-    #         predictions, confidences = model(
-    #             input={
-    #                 'input_ids': device_batch['input_ids'],
-    #                 'attention_mask': device_batch['attention_mask']
-    #             },
-    #             stock_indices=device_batch['stock_indices']
-    #         )
-            
-    #         loss = confidence_weighted_loss(predictions, device_batch['returns'], confidences)
-    #         total_loss += loss.item()
             
             # Store predictions and metadata
             all_predictions.append(predictions.cpu())
@@ -85,7 +71,8 @@ def evaluate_model(model, test_dataset, device):
 
 class NewsBasedStrategy(bt.Strategy):
     params = (
-        ('initial_cash', 100000),
+        ('confidence_threshold', 0.1),
+        ('num_stocks', 10)
     )
     
     def __init__(self):
@@ -106,7 +93,7 @@ class NewsBasedStrategy(bt.Strategy):
             
             for pred, conf, stocks in zip(predictions, confidences, self.stock_indices):
                 for p, c, s in zip(pred, conf, stocks):
-                    if s != 0:  # Skip padding
+                    if s != 0 and c > self.p.confidence_threshold:  # Skip padding and low confidence predictions
                         weighted_predictions[s].append(p * c)
                         weighted_confidences[s].append(c)
             
@@ -124,7 +111,7 @@ class NewsBasedStrategy(bt.Strategy):
             )
             
             # Invest in top N stocks with highest predicted returns
-            N = 10  # Number of stocks to invest in
+            N = self.p.num_stocks  # Number of stocks to invest in
             total_value = self.broker.getvalue()
             position_size = total_value / N
             
