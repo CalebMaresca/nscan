@@ -116,6 +116,7 @@ def preprocess_in_chunks(articles_dataset, process_batch, chunk_size=100000, tem
             batched=True,
             batch_size=100,
             remove_columns=chunk.column_names,
+            num_proc=4,
             desc=f"Processing articles {i}-{min(i + chunk_size, total_len)}"
         )
         
@@ -149,6 +150,8 @@ def preprocess_and_save(
     val_start_year,
     test_start_year,
     save_dir,
+    temp_dir,
+    chunk_size=100000,
     max_length=512
 ):
     print("Starting preprocessing...", flush=True)
@@ -172,11 +175,21 @@ def preprocess_and_save(
 
     print("Processing articles...", flush=True)
     # Process all articles using HF's parallel processing
-    processed_dataset = preprocess_in_chunks(
-        articles_dataset, 
-        process_batch, 
-        chunk_size=100000,  # Adjust this based on memory constraints
-        temp_dir = os.path.join(os.environ['SCRATCH'], "temp_processing")
+    # processed_dataset = preprocess_in_chunks(
+    #     articles_dataset, 
+    #     process_batch, 
+    #     chunk_size=chunk_size,  # Adjust this based on memory constraints
+    #     num_proc=4,
+    #     temp_dir=temp_dir
+    # )
+
+    processed_dataset = articles_dataset.map(
+        process_batch,
+        batched=True,
+        batch_size=100,  # Adjust based on memory
+        num_proc=4,      # Match your CPU cores
+        remove_columns=articles_dataset.column_names,
+        desc="Processing articles"
     )
 
     print("Splitting dataset...", flush=True)
@@ -228,7 +241,8 @@ if __name__ == "__main__":
     # Load data
     print("Loading data...", flush=True)
     years = range(2006, 2024)
-    data_dir = "/home/ccm7752/DL_Systems/nscan/data"
+    #data_dir = "/home/ccm7752/DL_Systems/nscan/data"
+    data_dir = "data"
     returns_by_year, sp500_by_year = load_returns_and_sp500_data(years, os.path.join(data_dir, "returns"))
     
     articles_path = os.path.join(data_dir, "raw", "FNSPID-date-corrected.csv")
@@ -241,8 +255,14 @@ if __name__ == "__main__":
     print("Data loaded! About to preprocess and save", flush=True)
 
     # Create save directory
-    save_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
+    #save_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
+    save_dir = "data/preprocessed_datasets"
     os.makedirs(save_dir, exist_ok=True)
+
+    #temp_dir = os.path.join(os.environ['SCRATCH'], "temp_processing")
+    temp_dir = "data/temp_processing"
+    os.makedirs(temp_dir, exist_ok=True)
+
 
     preprocess_and_save(
         articles_dataset,
@@ -251,5 +271,7 @@ if __name__ == "__main__":
         tokenizer,
         val_start_year=2022,
         test_start_year=2023,
-        save_dir=save_dir
+        save_dir=save_dir,
+        temp_dir=temp_dir,
+        chunk_size=100000
     )
