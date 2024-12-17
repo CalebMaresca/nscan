@@ -1,10 +1,12 @@
 import os
-import torch
+import ray
+from ray import train
+from ray.train.torch import TorchTrainer
 from nscan.utils.data import load_preprocessed_datasets, create_dataloaders
 from nscan.training.trainer import Trainer
 
-def train_single_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
-    """Train a single model with given configuration"""
+def train_func(config, data_dir):
+    """Training function to be executed in each worker"""
     train_dataset, val_dataset, _, metadata = load_preprocessed_datasets(data_dir)
     
     # Update config with metadata
@@ -18,11 +20,29 @@ def train_single_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
         config=config,
         train_dataset=train_dataset,
         val_dataset=val_dataset,
-        checkpoint_dir=checkpoint_dir,
-        load_checkpoint=load_checkpoint
+        checkpoint_dir=train.get_context().get_trial_dir(),
+        load_checkpoint=config.get("load_checkpoint")
     )
     
     return trainer.train()
+
+def train_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
+    """Setup and launch distributed training using Ray Train"""
+    # Add data_dir to config so it's available in training function
+    config["data_dir"] = data_dir
+    config["load_checkpoint"] = load_checkpoint
+
+    trainer = TorchTrainer(
+        train_func,
+        train_loop_config=config,
+        scaling_config={"num_workers": 4, "use_gpu": True},  # Adjust number of workers as needed
+        run_config=ray.train.RunConfig(
+            storage_path=checkpoint_dir,
+        )
+    )
+    
+    results = trainer.fit()
+    return results
 
 def main():
     # Configuration for single model training
@@ -44,7 +64,7 @@ def main():
     checkpoint_dir = os.path.join(os.environ.get('SCRATCH', 'checkpoints'), "DL_Systems/project/single_model")
     
     # Train model
-    train_single_model(config, data_dir, checkpoint_dir, load_checkpoint=None)
+    train_model(config, data_dir, checkpoint_dir, load_checkpoint=None)
 
 if __name__ == "__main__":
     main()
