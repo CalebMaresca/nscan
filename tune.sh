@@ -27,11 +27,11 @@ conda activate py311
 export WANDB_API_KEY=$(cat $SCRATCH/DL_Systems/project/.wandb_key)
 
 # Create a directory for this run
-RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/train/$SLURM_JOB_ID"
+RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/tune/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
 # Run the training script and save the dashboard port
-python -m nscan.training.train_model 2>&1 | tee $RUN_DIR/train.log
+python -m nscan.training.tune 2>&1 | tee $RUN_DIR/tune.log
 
 ENDOFCOMMANDS
 
