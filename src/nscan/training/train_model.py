@@ -3,7 +3,7 @@ import ray
 from ray import train
 from ray.train.torch import TorchTrainer
 from ray.air.integrations.wandb import setup_wandb
-from nscan.utils.data import load_preprocessed_datasets, create_dataloaders
+from nscan.utils.data import load_preprocessed_datasets
 from nscan.training.trainer import Trainer
 
 def train_func(config, data_dir):

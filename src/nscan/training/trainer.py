@@ -3,7 +3,6 @@ import torch
 from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from datetime import datetime
-#from typing import Dict, List
 from ray import train
 from nscan.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
 from nscan.utils.data import collate_fn

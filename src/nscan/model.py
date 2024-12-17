@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import AutoModel #, AutoTokenizer
+from transformers import AutoModel
 from typing import Tuple
 from .multihead_diff_2 import MultiheadFlashDiff2
 

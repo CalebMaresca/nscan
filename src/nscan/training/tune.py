@@ -1,7 +1,6 @@
 import os
 import torch
-#from typing import Dict, List
-from ray import train, tune
+from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.air.integrations.wandb import WandbLoggerCallback
