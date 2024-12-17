@@ -37,36 +37,36 @@ def evaluate_model(model, test_dataset, device):
     total_loss = 0
     
     with torch.no_grad():
-            for batch in test_loader:
-                    
-                device_batch = move_batch(batch, device)
+        for batch in test_loader:
                 
-                with autocast(device_type=str(device)):
-                    predictions, confidences = model(
-                        input={
-                            'input_ids': device_batch['input_ids'],
-                            'attention_mask': device_batch['attention_mask']
-                        },
-                        stock_indices=device_batch['stock_indices']
-                    )
-                    
-                    loss = confidence_weighted_loss(predictions, device_batch['returns'], confidences)
-                    total_loss += loss.item()
+            device_batch = move_batch(batch, device)
+            
+            with autocast(device_type=str(device)):
+                predictions, confidences = model(
+                    input={
+                        'input_ids': device_batch['input_ids'],
+                        'attention_mask': device_batch['attention_mask']
+                    },
+                    stock_indices=device_batch['stock_indices']
+                )
+                
+                loss = confidence_weighted_loss(predictions, device_batch['returns'], confidences)
+                total_loss += loss.item()
             
             # Store predictions and metadata
-            all_predictions.append(predictions.cpu())
-            all_confidences.append(confidences.cpu())
-            all_returns.append(device_batch['returns'].cpu())
-            all_dates.extend(device_batch['date'])
-            all_stock_indices.append(device_batch['stock_indices'].cpu())
+            all_predictions.append(predictions.cpu())  # List of (batch_size, num_stocks_per_date) tensors
+            all_confidences.append(confidences.cpu())  # List of (batch_size, num_stocks_per_date) tensors
+            all_returns.append(batch['returns'])       # List of (batch_size, num_stocks_per_date) tensors
+            all_dates.extend(batch['date'])           # List of dates (strings)
+            all_stock_indices.append(batch['stock_indices'])  # List of (batch_size, num_stocks_per_date) tensors
     
     return {
         'test_loss': total_loss / len(test_loader),
-        'predictions': torch.cat(all_predictions),
-        'confidences': torch.cat(all_confidences),
-        'returns': torch.cat(all_returns),
-        'dates': all_dates,
-        'stock_indices': torch.cat(all_stock_indices)
+        'predictions': torch.cat(all_predictions),     # shape (total_samples, num_stocks_per_date)
+        'confidences': torch.cat(all_confidences),     # shape (total_samples, num_stocks_per_date)
+        'returns': torch.cat(all_returns),             # shape (total_samples, num_stocks_per_date)
+        'dates': all_dates,                            # List of total_samples-many dates (strings)
+        'stock_indices': torch.cat(all_stock_indices)  # shape (total_samples, num_stocks_per_date)
     }
 
 class NewsBasedStrategy(bt.Strategy):
