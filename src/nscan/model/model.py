@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from transformers import AutoModel
 from typing import Tuple
-from .multihead_diff_2 import MultiheadFlashDiff2
+from .multihead_diff_2 import MultiheadDiff2
 
 
 class StockSelectionHead(nn.Module):
@@ -27,21 +27,23 @@ class StockSelectionHead(nn.Module):
 
 class CustomDecoderLayer(nn.Module):
     """Modified transformer decoder layer with cross-attention before self-attention."""
-    def __init__(self, hidden_dim: int, num_heads: int, depth: int, attn_dropout: float = 0.1, ff_dropout: float = 0.1):
+    def __init__(self, hidden_dim: int, num_heads: int, depth: int, attn_dropout: float = 0.1, ff_dropout: float = 0.1, use_flash: bool = True):
         super().__init__()
         
         # Cross attention (to attend to encoded text)
-        self.cross_attention = MultiheadFlashDiff2(
+        self.cross_attention = MultiheadDiff2(
             embed_dim=hidden_dim,
             depth=depth,
-            num_heads=num_heads
+            num_heads=num_heads,
+            use_flash=use_flash
         )
         
         # Non-causal self attention (stocks attending to each other)
-        self.self_attention = MultiheadFlashDiff2(
+        self.self_attention = MultiheadDiff2(
             embed_dim=hidden_dim,
             depth=depth,
-            num_heads=num_heads
+            num_heads=num_heads,
+            use_flash=use_flash
         )
         
         # Feed forward network
@@ -104,11 +106,12 @@ class StockDecoder(nn.Module):
         hidden_dim: int,
         num_heads: int,
         attn_dropout: float = 0.1,
-        ff_dropout: float = 0.1
+        ff_dropout: float = 0.1,
+        use_flash: bool = True
     ):
         super().__init__()
         self.layers = nn.ModuleList([
-            CustomDecoderLayer(hidden_dim, num_heads, depth=i, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
+            CustomDecoderLayer(hidden_dim, num_heads, depth=i, attn_dropout=attn_dropout, ff_dropout=ff_dropout, use_flash=use_flash)
             for i in range(num_layers)
         ])
         
@@ -160,6 +163,7 @@ class MultiStockPredictor(nn.Module):
         num_pred_layers: int,
         attn_dropout: float = 0.1,
         ff_dropout: float = 0.1,
+        use_flash: bool = True,
         encoder_name: str = "FinText/FinText-Base-2007"
     ):
         super().__init__()
@@ -189,7 +193,8 @@ class MultiStockPredictor(nn.Module):
             hidden_dim=hidden_dim,
             num_heads=num_heads,
             attn_dropout=attn_dropout,
-            ff_dropout=ff_dropout
+            ff_dropout=ff_dropout,
+            use_flash=use_flash
         )
         
         # Return prediction head
@@ -251,6 +256,7 @@ class MultiStockPredictorWithConfidence(nn.Module):
         num_pred_layers: int,
         attn_dropout: float = 0.1,
         ff_dropout: float = 0.1,
+        use_flash: bool = True,
         encoder_name: str = "FinText/FinText-Base-2007"
     ):
         super().__init__()
@@ -276,7 +282,8 @@ class MultiStockPredictorWithConfidence(nn.Module):
             hidden_dim=hidden_dim,
             num_heads=num_heads,
             attn_dropout=attn_dropout,
-            ff_dropout=ff_dropout
+            ff_dropout=ff_dropout,
+            use_flash=use_flash
         )
         
         # Return prediction head
