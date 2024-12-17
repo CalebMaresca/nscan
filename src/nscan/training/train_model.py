@@ -2,11 +2,20 @@ import os
 import ray
 from ray import train
 from ray.train.torch import TorchTrainer
+from ray.air.integrations.wandb import setup_wandb
 from nscan.utils.data import load_preprocessed_datasets, create_dataloaders
 from nscan.training.trainer import Trainer
 
 def train_func(config, data_dir):
     """Training function to be executed in each worker"""
+
+    # Setup WandB
+    wandb_run = setup_wandb(
+        config=config,
+        api_key=os.getenv("WANDB_API_KEY"),
+        project="stock-predictor"
+    )
+
     train_dataset, val_dataset, _, metadata = load_preprocessed_datasets(data_dir)
     
     # Update config with metadata
@@ -21,7 +30,8 @@ def train_func(config, data_dir):
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         checkpoint_dir=train.get_context().get_trial_dir(),
-        load_checkpoint=config.get("load_checkpoint")
+        load_checkpoint=config.get("load_checkpoint"),
+        wandb=wandb_run
     )
     
     return trainer.train()
@@ -32,12 +42,15 @@ def train_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
     config["data_dir"] = data_dir
     config["load_checkpoint"] = load_checkpoint
 
+    # Get WandB API key from environment variable
+    wandb_api_key = os.getenv("WANDB_API_KEY")
+
     trainer = TorchTrainer(
         train_func,
         train_loop_config=config,
         scaling_config={"num_workers": 4, "use_gpu": True},  # Adjust number of workers as needed
         run_config=ray.train.RunConfig(
-            storage_path=checkpoint_dir,
+            storage_path=checkpoint_dir
         )
     )
     

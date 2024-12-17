@@ -15,7 +15,8 @@ class Trainer:
         train_dataset,
         val_dataset,
         checkpoint_dir=None,
-        load_checkpoint=None
+        load_checkpoint=None,
+        wandb=None
     ):
         self.config = config
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -76,8 +77,9 @@ class Trainer:
         self.validation_freq = config["validation_freq"]
 
         # Create checkpoint directory in scratch
-        self.checkpoint_dir = checkpoint_dir
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        if checkpoint_dir:
+            self.checkpoint_dir = checkpoint_dir
+            os.makedirs(self.checkpoint_dir, exist_ok=True)
 
         # Load checkpoint if provided
         if load_checkpoint:
@@ -85,6 +87,9 @@ class Trainer:
             self.model.load_state_dict(checkpoint["model_state_dict"])
             self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+        if wandb:
+            self.wandb = wandb
         
     def move_batch(self, batch):
         # Move to device
@@ -162,6 +167,13 @@ class Trainer:
                     "val_loss": val_loss,
                     "epoch": current_epoch
                 })
+
+                if self.wandb:
+                    self.wandb.log({
+                        "train_loss": current_train_loss,
+                        "val_loss": val_loss,
+                        "epoch": current_epoch
+                    })
                 
                 print(f"Epoch {self.current_epoch + 1}, Batch {batch_idx + 1}/{num_batches}")
                 print(f"Train Loss: {current_train_loss:.4f}")
@@ -245,6 +257,13 @@ class Trainer:
                 "val_loss": val_loss,
                 "epoch": epoch + 1
             })
+
+            if self.wandb:
+                    self.wandb.log({
+                        "train_loss": train_loss,
+                        "val_loss": val_loss,
+                        "epoch": epoch + 1
+                    })
 
             print(f"Epoch {epoch+1}/{self.num_epochs}")
             print(f"Time: {datetime.now() - start_time}")
