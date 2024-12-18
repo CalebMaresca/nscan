@@ -1,6 +1,7 @@
 import os
 import json
 import numpy as np
+import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 from torch.amp import autocast
@@ -75,7 +76,7 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     
     # Load the preprocessed datasets and metadata
     dataset_dict = load_from_disk(os.path.join(data_dir, "preprocessed_datasets"))  # This loads the DatasetDict
-    test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=8)  # Get the test split
+    test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=128)  # Get the test split
 
     # Load checkpoint which contains model state
     checkpoint = torch.load(checkpoint_path)
@@ -125,6 +126,36 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
         returns_by_year,
         sp500_by_year
     )
+    
+    # 1. Portfolio Value Over Time
+    #fig = backtest_results.plot(open=False, high=False, low=False, volume=False)[0][0]
+    #fig.savefig(os.path.join(data_dir,'backtest_plot.png'))
+    #    plt.close(fig)
+
+    # 3. Plot predicted vs actual returns scatter
+    plt.figure(figsize=(10, 10))
+    plt.scatter(test_results['returns'].flatten(), test_results['predictions'].flatten(), alpha=0.1)
+    plt.xlabel('Actual Returns')
+    plt.ylabel('Predicted Returns')
+    plt.title('Predicted vs Actual Returns')
+    plt.grid(True)
+    max_val = max(abs(plt.xlim()[0]), abs(plt.xlim()[1]))
+    plt.plot([-max_val, max_val], [-max_val, max_val], 'r--')  # Perfect prediction line
+    plt.tight_layout()
+    plt.savefig(os.path.join(data_dir, 'predicted_vs_actual.png'))
+    plt.close()
+    
+    # 4. Plot prediction error distribution
+    errors = test_results['predictions'] - test_results['returns']
+    plt.figure(figsize=(10, 6))
+    plt.hist(errors.flatten(), bins=50)
+    plt.title('Distribution of Prediction Errors')
+    plt.xlabel('Prediction Error')
+    plt.ylabel('Count')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(data_dir, 'error_distribution.png'))
+    plt.close()
 
 if __name__ == "__main__":
     test_years = [2023]

@@ -1,7 +1,9 @@
+import os
 import backtrader as bt
 from collections import defaultdict
 import math
 import pandas as pd
+import torch
 
 class NewsBasedStrategy(bt.Strategy):
     params = (
@@ -13,35 +15,33 @@ class NewsBasedStrategy(bt.Strategy):
         self.predictions_by_date = self.datas[0].predictions_by_date
         self.confidences_by_date = self.datas[0].confidences_by_date
         self.stock_indices = self.datas[0].stock_indices
-        
+        self.idx_to_symbol = self.datas[0].idx_to_symbol
+
     def next(self):
         current_date = self.datas[0].datetime.date(0).strftime('%Y-%m-%d')
         
         if current_date in self.predictions_by_date:
             predictions = self.predictions_by_date[current_date]
             confidences = self.confidences_by_date[current_date]
-            
+            stocks = self.stock_indices[current_date] # TODO: fix this ugliness!
             print(f"\nDate: {current_date}")
             print(f"Portfolio Value: {self.broker.getvalue()}")
             # Combine predictions for the same day using confidence-weighted average
-            weighted_predictions = defaultdict(list)
-            weighted_confidences = defaultdict(list)
+            weighted_pred_sums = defaultdict(float)
+            confidence_sums = defaultdict(float)
             
-            for pred, conf, stocks in zip(predictions, confidences, self.stock_indices):
-                for p, c, s in zip(pred, conf, stocks):
+            for pred, conf, stock in zip(predictions, confidences, stocks):
+                for p, c, s in zip(pred, conf, stock):
                     if s != 0 and c > self.p.confidence_threshold:  # Skip padding and low confidence predictions
-                        weighted_predictions[s].append(p * c)
-                        weighted_confidences[s].append(c)
+                        weighted_pred_sums[s] += p*c
+                        confidence_sums[s] += c
             
             # Calculate final predictions
-            final_predictions = {}
-            for stock, preds in weighted_predictions.items():
-                confs = weighted_confidences[stock]
-                final_predictions[stock] = sum(preds) / sum(confs)
+            final_predictions = {stock: weighted_pred_sums[stock] / confidence_sums[stock] for stock in weighted_pred_sums.keys()}
             
             # Sort stocks by predicted returns
             sorted_stocks = sorted(
-                final_predictions.items(), 
+                [(stock.item(), pred.item()) for stock, pred in final_predictions.items()], 
                 key=lambda x: x[1], 
                 reverse=True
             )
@@ -57,29 +57,26 @@ class NewsBasedStrategy(bt.Strategy):
                     self.close(data)
             
             # Open new positions
-            for stock_idx, pred in sorted_stocks[:N]:
+            for stock, pred in sorted_stocks[:N]:
                 if pred > 0:  # Only go long if predicted return is positive
                     try:
-                        if stock_idx == '-':
-                            continue
-                        idx = int(stock_idx)
-                        stock_data = self.datas[idx]
+                        permno = self.idx_to_symbol[stock]
+                        stock_data = self.getdatabyname(str(permno))
                         if not math.isnan(stock_data.close[0]):
                             current_price = stock_data.close[0]
                             position_value = position_size/current_price
-                            print(f"Buying stock {idx}: {position_value} units at price {current_price}")
+                            print(f"Buying stock {stock}: {position_value} units at price {current_price}")
                             self.buy(data=stock_data, 
                                 size=position_value)
                     except Exception as e:
                         print(f"Error trading stock {stock}: {e}")
+                        print(f"Available data feeds: {[d._name for d in self.datas]}")
 
 class ReturnsData(bt.feeds.PandasData):
     """Custom data feed that works with returns instead of prices"""
     lines = ('returns',)
     params = (
         ('returns', 'Returns'),  # Name of returns column in DataFrame
-        ('openinterest', None),  # Not using these fields
-        ('volume', None),
     )
     
     def __init__(self, *args, **kwargs):
@@ -103,6 +100,9 @@ class ReturnsData(bt.feeds.PandasData):
         return ret
 
 def run_backtest(test_results, returns_by_year, sp500_by_year):
+    metadata = torch.load(os.path.join(os.environ['SCRATCH'], 'DL_Systems/project/data/preprocessed_datasets/metadata.pt'))
+    idx_to_symbol = {idx: symbol for symbol, idx in metadata['symbol_to_idx'].items()}
+
     # Create a cerebro instance
     cerebro = bt.Cerebro()
     
@@ -143,6 +143,7 @@ def run_backtest(test_results, returns_by_year, sp500_by_year):
             data.predictions_by_date = predictions_by_date
             data.confidences_by_date = confidences_by_date
             data.stock_indices = stock_indices_by_date
+            data.idx_to_symbol = idx_to_symbol
             cerebro.adddata(data)
     
     # Set starting cash
@@ -175,4 +176,4 @@ def run_backtest(test_results, returns_by_year, sp500_by_year):
     max_drawdown = drawdown_analysis.get('max', {}).get('drawdown', None)
     print(f'Max Drawdown: {max_drawdown:.2%}' if max_drawdown is not None else 'Max Drawdown: N/A')
     
-    return results
+    return cerebro
