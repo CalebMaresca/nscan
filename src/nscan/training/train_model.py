@@ -6,8 +6,10 @@ from ray.air.integrations.wandb import setup_wandb
 from nscan.utils.data import load_preprocessed_datasets
 from nscan.training.trainer import Trainer
 
-def train_func(config, data_dir):
+def train_func(config):
     """Training function to be executed in each worker"""
+    # Get data_dir from config
+    data_dir = config.pop("data_dir")
 
     # Setup WandB
     wandb_run = setup_wandb(
