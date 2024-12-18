@@ -48,8 +48,8 @@ def train_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
     trainer = TorchTrainer(
         train_func,
         train_loop_config=config,
-        scaling_config={"num_workers": 4, "use_gpu": True},  # Adjust number of workers as needed
-        run_config=ray.train.RunConfig(
+        scaling_config=train.ScalingConfig(num_workers=4, use_gpu=True),  # Adjust number of workers as needed
+        run_config=train.RunConfig(
             storage_path=checkpoint_dir
         )
     )
@@ -60,16 +60,17 @@ def train_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
 def main():
     # Configuration for single model training
     config = {
-        "num_decoder_layers": 3,
-        "num_heads": 6,
-        "num_pred_layers": 3,
-        "attn_dropout": 0.2,
+        "num_decoder_layers": 4,
+        "num_heads": 4,
+        "num_pred_layers": 4,
+        "attn_dropout": 0.25,
         "ff_dropout": 0.2,
-        "lr": 1e-4,
+        "lr": 0.000036,
         "weight_decay": 1e-5,
-        "batch_size": 128,
-        "num_epochs": 10,
-        "validation_freq": 100
+        "batch_size": 64,
+        "num_epochs": 5,
+        "validation_freq": 1000,
+        "use_flash": False
     }
     
     # Setup paths

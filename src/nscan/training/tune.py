@@ -54,7 +54,8 @@ def main():
         "max_length": metadata["max_length"],  # Fixed
         "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
-        "validation_freq": 100
+        "validation_freq": 100,
+        "use_flash": False
     }
 
     # Initialize ASHA scheduler

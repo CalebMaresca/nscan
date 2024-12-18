@@ -28,7 +28,8 @@ class Trainer:
             num_pred_layers=config["num_pred_layers"],
             attn_dropout=config["attn_dropout"],
             ff_dropout=config["ff_dropout"],
-            encoder_name=config["encoder_name"]
+            encoder_name=config["encoder_name"],
+            use_flash=config["use_flash"]
         ).to(self.device)
         
         self.model = torch.compile(self.model, mode='max-autotune-no-cudagraphs')
@@ -41,7 +42,7 @@ class Trainer:
             collate_fn=collate_fn,
             num_workers=8,
             pin_memory=True if self.device == "cuda" else False,
-            prefetch_factor=8,  # Number of batches loaded in advance by each worker
+            prefetch_factor=4,  # Number of batches loaded in advance by each worker
             persistent_workers=True  # Keep worker processes alive between epochs
         )
         
@@ -50,9 +51,9 @@ class Trainer:
             batch_size=config["batch_size"],
             shuffle=False,
             collate_fn=collate_fn,
-            num_workers=4,
+            num_workers=2,
             pin_memory=True if self.device == "cuda" else False,
-            prefetch_factor=8,  # Number of batches loaded in advance by each worker
+            prefetch_factor=4,  # Number of batches loaded in advance by each worker
             persistent_workers=True  # Keep worker processes alive between epochs
         )
 
