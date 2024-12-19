@@ -27,8 +27,8 @@ def clean_duplicates(file_path):
     print(f"Removed {rows_removed} duplicate rows")
     
     # Save cleaned data
-    df.to_csv(os.path.join("data/returns", file_name), index=False)
-    print(f"Saved cleaned data to {file_name}")
+    df.to_csv(os.path.join("data/returns", file_path), index=False)
+    print(f"Saved cleaned data to {file_path}")
 
 def create_process_function(returns_by_year, year_stock_indices, tokenizer, max_length=512):
     def process_batch(batch):
