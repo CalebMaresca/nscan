@@ -6,9 +6,11 @@ import torch
 from torch.utils.data import DataLoader
 from torch.amp import autocast
 from datasets import load_from_disk
-from nscan.backtesting.backtesting import run_backtest
-from nscan.utils.data import NewsReturnDataset, load_returns_and_sp500_data, collate_fn
-from nscan.model.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
+from nscan.backtesting import run_backtest
+from nscan.utils import NewsReturnDataset, load_returns_and_sp500_data, collate_fn
+from nscan import NSCAN, confidence_weighted_loss
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
 
 def move_batch(batch, device):
     # Move to device
@@ -76,17 +78,17 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     
     # Load the preprocessed datasets and metadata
     dataset_dict = load_from_disk(os.path.join(data_dir, "preprocessed_datasets"))  # This loads the DatasetDict
-    test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=128)  # Get the test split
+    test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=4)  # Get the test split
 
     # Load checkpoint which contains model state
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
     
     # Load config
     with open(config_path, 'r') as f:
         best_config = json.load(f)
 
     # Initialize model with best config
-    model = MultiStockPredictorWithConfidence(
+    model = NSCAN(
         num_stocks=best_config["num_stocks"],
         num_decoder_layers=best_config["num_decoder_layers"],
         num_heads=best_config["num_heads"],
@@ -96,7 +98,8 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
         encoder_name=best_config["encoder_name"],
         use_flash=False
     )
-    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    model = torch.compile(model, mode='max-autotune-no-cudagraphs')
+    model.load_state_dict(checkpoint['model_state_dict'], strict=True)
     model.to(device)
 
     test_results = get_model_predictions(model, test_dataset, device)
@@ -159,11 +162,11 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
 
 if __name__ == "__main__":
     test_years = [2023]
-    checkpoint_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/epoch0_batch19999.pt")
-    config_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/params.json")
-    data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/data")
-    #checkpoint_path = os.path.abspath("checkpoints/best_model/epoch0_batch19999.pt")
-    #config_path = os.path.abspath("checkpoints/best_model/params.json")
-    #data_dir = os.path.abspath("data")
+    #checkpoint_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/epoch0_batch19999.pt")
+    #config_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/params.json")
+    #data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/data")
+    checkpoint_path = os.path.abspath("checkpoints/best_model/epoch1_batch2999.pt")
+    config_path = os.path.abspath("checkpoints/best_model/params.json")
+    data_dir = os.path.abspath("data")
     
     run_model_evaluation(test_years, checkpoint_path, config_path, data_dir)

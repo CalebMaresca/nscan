@@ -32,7 +32,9 @@ class NewsBasedStrategy(bt.Strategy):
             
             for pred, conf, stock in zip(predictions, confidences, stocks):
                 for p, c, s in zip(pred, conf, stock):
+                    print(f"before if statement: p: {p}, c: {c}, s: {s}")
                     if s != 0 and c > self.p.confidence_threshold:  # Skip padding and low confidence predictions
+                        print(f"after if statement: p: {p}, c: {c}, s: {s}")
                         weighted_pred_sums[s] += p*c
                         confidence_sums[s] += c
             
@@ -41,11 +43,10 @@ class NewsBasedStrategy(bt.Strategy):
             
             # Sort stocks by predicted returns
             sorted_stocks = sorted(
-                [(stock.item(), pred.item()) for stock, pred in final_predictions.items()], 
+                [(stock, pred) for stock, pred in final_predictions.items()], 
                 key=lambda x: x[1], 
                 reverse=True
             )
-            #print(sorted_stocks, flush=True)
             # Invest in top N stocks with highest predicted returns
             N = self.p.num_stocks  # Number of stocks to invest in
             total_value = self.broker.getvalue()
@@ -100,7 +101,7 @@ class ReturnsData(bt.feeds.PandasData):
         return ret
 
 def run_backtest(test_results, returns_by_year, sp500_by_year):
-    metadata = torch.load(os.path.join(os.environ['SCRATCH'], 'DL_Systems/project/data/preprocessed_datasets/metadata.pt'))
+    metadata = torch.load('data/preprocessed_datasets/metadata.pt')
     idx_to_symbol = {idx: symbol for symbol, idx in metadata['symbol_to_idx'].items()}
 
     # Create a cerebro instance
@@ -120,11 +121,12 @@ def run_backtest(test_results, returns_by_year, sp500_by_year):
         test_results['confidences'],
         test_results['stock_indices']
     ):
-        predictions_by_date[date].append(pred)
-        confidences_by_date[date].append(conf)
-        stock_indices_by_date[date].append(stocks)
+        predictions_by_date[date].append([p.item() if torch.is_tensor(p) else p for p in pred])
+        confidences_by_date[date].append([c.item() if torch.is_tensor(c) else c for c in conf])
+        stock_indices_by_date[date].append([s.item() if torch.is_tensor(s) else s for s in stocks])
     
     # Add data feeds
+    # TODO: check this!
     for year in returns_by_year:
         for stock in sp500_by_year[year]:
             # Convert returns to DataFrame if it's a Series

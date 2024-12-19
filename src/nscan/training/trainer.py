@@ -4,8 +4,8 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from datetime import datetime
 from ray import train
-from nscan.model.model import MultiStockPredictorWithConfidence, confidence_weighted_loss
-from nscan.utils.data import collate_fn
+from nscan import NSCAN, confidence_weighted_loss
+from nscan.utils import collate_fn
 
 class Trainer:
     def __init__(
@@ -21,7 +21,7 @@ class Trainer:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Initialize model
-        self.model = MultiStockPredictorWithConfidence(
+        self.model = NSCAN(
             num_stocks=config["num_stocks"],  # Total unique stocks
             num_decoder_layers=config["num_decoder_layers"],
             num_heads=config["num_heads"],
