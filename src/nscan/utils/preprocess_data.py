@@ -6,41 +6,29 @@ import torch
 from transformers import AutoTokenizer
 import gc
 import shutil
+from nscan.utils import load_returns_and_sp500_data
 
-def load_returns_and_sp500_data(years, data_dir):
-    # Load returns data by year
-    returns_by_year = {}
-    sp500_by_year = {}
+def clean_duplicates(file_path):
+    print(f"Cleaning {file_path}...")
     
-    for year in years:
-        # Load returns DataFrame for this year
-        file_path = os.path.join(data_dir, f"{year}_returns.csv")
-        df = pd.read_csv(file_path)
-
-        # Check raw data before pivot
-        print(f"\nYear {year}:")
-        print(f"Raw data NaN count: {df['DlyRet'].isna().sum()}")
-        
-        # Pivot the data to get dates as rows and PERMNOs as columns
-        returns_df = df.pivot(
-            index='DlyCalDt', 
-            columns='PERMNO', 
-            values='DlyRet'
-        ).sort_index(axis=1)  # Sort columns (PERMNOs)
-
-        # Check pivoted data
-        print(f"Pivoted data NaN count: {returns_df.isna().sum().sum()}")
-        print(f"Total cells: {returns_df.size}")
-        print(f"NaN percentage: {(returns_df.isna().sum().sum() / returns_df.size) * 100:.2f}%")
-
-        # Fill NaN values with 0 (or another appropriate value)
-        returns_df = returns_df.fillna(0)
-        
-        returns_by_year[str(year)] = returns_df
-        # Get unique sorted PERMNOs for this year
-        sp500_by_year[str(year)] = sorted(df['PERMNO'].unique().tolist())
-        
-    return returns_by_year, sp500_by_year
+    # Read the data
+    df = pd.read_csv(file_path)
+    
+    # Count rows before
+    rows_before = len(df)
+    
+    # Drop duplicates (keeping first occurrence)
+    df = df.drop_duplicates()
+    
+    # Count rows after
+    rows_after = len(df)
+    rows_removed = rows_before - rows_after
+    
+    print(f"Removed {rows_removed} duplicate rows")
+    
+    # Save cleaned data
+    df.to_csv(os.path.join("data/returns", file_name), index=False)
+    print(f"Saved cleaned data to {file_name}")
 
 def create_process_function(returns_by_year, year_stock_indices, tokenizer, max_length=512):
     def process_batch(batch):
@@ -150,8 +138,6 @@ def preprocess_and_save(
     val_start_year,
     test_start_year,
     save_dir,
-    temp_dir,
-    chunk_size=100000,
     max_length=512
 ):
     print("Starting preprocessing...", flush=True)
@@ -174,15 +160,6 @@ def preprocess_and_save(
     )
 
     print("Processing articles...", flush=True)
-    # Process all articles using HF's parallel processing
-    # processed_dataset = preprocess_in_chunks(
-    #     articles_dataset, 
-    #     process_batch, 
-    #     chunk_size=chunk_size,  # Adjust this based on memory constraints
-    #     num_proc=4,
-    #     temp_dir=temp_dir
-    # )
-
     processed_dataset = articles_dataset.map(
         process_batch,
         batched=True,
@@ -233,16 +210,22 @@ def preprocess_and_save(
     print(f"Split sizes: Train={len(train_dataset)}, Val={len(val_dataset)}, Test={len(test_dataset)}")
 
 if __name__ == "__main__":
+    years = range(2006, 2024)
+    #data_dir = "/home/ccm7752/DL_Systems/nscan/data"
+    data_dir = "data"
+
     print("Script starting", flush=True)
+
+    print("Cleaning duplicates...", flush=True)
+    for year in years:
+        clean_duplicates(os.path.join(data_dir, "returns", f"{year}_returns.csv"))
+
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained("FinText/FinText-Base-2007")
     print("Tokenizer initialized successfully!", flush=True)
 
     # Load data
     print("Loading data...", flush=True)
-    years = range(2006, 2024)
-    #data_dir = "/home/ccm7752/DL_Systems/nscan/data"
-    data_dir = "data"
     returns_by_year, sp500_by_year = load_returns_and_sp500_data(years, os.path.join(data_dir, "returns"))
     
     articles_path = os.path.join(data_dir, "raw", "FNSPID-date-corrected.csv")
@@ -259,10 +242,6 @@ if __name__ == "__main__":
     save_dir = "data/preprocessed_datasets"
     os.makedirs(save_dir, exist_ok=True)
 
-    #temp_dir = os.path.join(os.environ['SCRATCH'], "temp_processing")
-    temp_dir = "data/temp_processing"
-    os.makedirs(temp_dir, exist_ok=True)
-
 
     preprocess_and_save(
         articles_dataset,
@@ -271,7 +250,5 @@ if __name__ == "__main__":
         tokenizer,
         val_start_year=2022,
         test_start_year=2023,
-        save_dir=save_dir,
-        temp_dir=temp_dir,
-        chunk_size=100000
+        save_dir=save_dir
     )
