@@ -32,9 +32,7 @@ class NewsBasedStrategy(bt.Strategy):
             
             for pred, conf, stock in zip(predictions, confidences, stocks):
                 for p, c, s in zip(pred, conf, stock):
-                    print(f"before if statement: p: {p}, c: {c}, s: {s}")
                     if s != 0 and c > self.p.confidence_threshold:  # Skip padding and low confidence predictions
-                        print(f"after if statement: p: {p}, c: {c}, s: {s}")
                         weighted_pred_sums[s] += p*c
                         confidence_sums[s] += c
             
@@ -66,7 +64,7 @@ class NewsBasedStrategy(bt.Strategy):
                         if not math.isnan(stock_data.close[0]):
                             current_price = stock_data.close[0]
                             position_value = position_size/current_price
-                            print(f"Buying stock {stock}: {position_value} units at price {current_price}")
+                            print(f"Buying stock {permno} (index = {stock}): {position_value} units at price {current_price}")
                             self.buy(data=stock_data, 
                                 size=position_value)
                     except Exception as e:
