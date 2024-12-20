@@ -2,7 +2,7 @@
 
 NSCAN is a novel deep learning model for predicting multiple stock returns simultaneously using financial news data and cross-attention mechanisms. Unlike traditional approaches that predict returns for individual stocks in isolation, our model captures cross-asset relationships and market interactions.
 
-<img src="NSCAN-architecture.jpg" width="60%" alt="NSCAN Architecture">
+<img src="NSCAN-architecture.jpg" width="50%" alt="NSCAN Architecture">
 
 ## Features
 
@@ -33,7 +33,7 @@ pip install -e .
 
 3. Add data:
 
-Due to licensing restrictions, we cannot publically share the data used in this project. Please contact Caleb Maresca at calebmaresca@gmail.com for more information.
+Due to licensing restrictions, we cannot publically share the data used in this project. Please contact Caleb Maresca at ccm7752@nyu.edu for more information.
 
 4. Set up wandb API key:
 
