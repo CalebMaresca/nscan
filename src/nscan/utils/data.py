@@ -3,12 +3,16 @@ from datasets import load_from_disk
 import pandas as pd
 
 class NewsReturnDataset(torch.utils.data.Dataset):
-    def __init__(self, preprocessed_dataset, max_articles_per_day=None):
-        """
-        Args:
-            preprocessed_dataset: HF dataset with preprocessed articles
+    """A PyTorch Dataset for news articles and their associated stock returns.
+    
+        This dataset handles the preprocessing of news articles and their corresponding
+        stock market returns, with optional limiting of articles per day.
+        
+        Attributes:
+            preprocessed_dataset: HF dataset containing preprocessed news articles
             max_articles_per_day: Maximum number of articles to keep per day
         """
+    def __init__(self, preprocessed_dataset, max_articles_per_day=None):
         self.articles = preprocessed_dataset
         if max_articles_per_day is not None:
             # Create a dictionary mapping dates to lists of indices
@@ -42,6 +46,18 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         }
 
 def load_preprocessed_datasets(data_dir):
+    """Loads preprocessed datasets from disk and creates dataset objects.
+    
+    Args:
+        data_dir (Path): Directory containing the preprocessed datasets
+        
+    Returns:
+        tuple: Contains:
+            - train_dataset (NewsReturnDataset): Training dataset
+            - val_dataset (NewsReturnDataset): Validation dataset
+            - test_dataset (NewsReturnDataset): Test dataset
+            - metadata (dict): Dataset metadata
+    """
     # Load the preprocessed datasets
     dataset_dict = load_from_disk(data_dir)
     metadata = torch.load(data_dir / 'metadata.pt')
@@ -92,6 +108,17 @@ def collate_fn(batch):
     }
 
 def load_returns_and_sp500_data(years, data_dir):
+    """Loads stock returns and S&P 500 constituent data for specified years.
+    
+    Args:
+        years (list): List of years to load data for
+        data_dir (Path): Directory containing the returns data files
+        
+    Returns:
+        tuple: Contains:
+            - returns_by_year (dict): Maps years to DataFrames of daily returns
+            - sp500_by_year (dict): Maps years to lists of S&P 500 PERMNOs
+    """
     # Load returns data by year
     returns_by_year = {}
     sp500_by_year = {}

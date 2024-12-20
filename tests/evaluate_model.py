@@ -16,7 +16,16 @@ from nscan.config import CHECKPOINT_DIR, DATA_DIR, PREPROCESSED_DATA_DIR
 #torch._dynamo.config.suppress_errors = True
 
 def move_batch(batch, device):
-    # Move to device
+    """Move batch data to specified device.
+    
+    Args:
+        batch (dict): Batch dictionary containing input_ids, attention_mask, 
+                     stock_indices, and returns tensors
+        device (torch.device): Target device to move tensors to
+    
+    Returns:
+        dict: Batch with all tensors moved to specified device
+    """
     return {
         'input_ids': batch['input_ids'].to(device),
         'attention_mask': batch['attention_mask'].to(device),
@@ -25,6 +34,22 @@ def move_batch(batch, device):
     }
 
 def get_model_predictions(model, test_dataset, device):
+    """Generate predictions using the model on the test dataset.
+    
+    Args:
+        model (NSCAN): The trained NSCAN model
+        test_dataset (NewsReturnDataset): Dataset containing test samples
+        device (torch.device): Device to run inference on
+        
+    Returns:
+        dict: Dictionary containing:
+            - test_loss (float): Average loss across test batches
+            - predictions (torch.Tensor): Model predictions (shape: total_samples x num_stocks_per_date)
+            - confidences (torch.Tensor): Prediction confidences (shape: total_samples x num_stocks_per_date)
+            - returns (torch.Tensor): Actual returns (shape: total_samples x num_stocks_per_date)
+            - dates (list): List of dates as strings
+            - stock_indices (torch.Tensor): Stock indices (shape: total_samples x num_stocks_per_date)
+    """
     model.eval()
     test_loader = DataLoader(
         test_dataset,
@@ -74,9 +99,60 @@ def get_model_predictions(model, test_dataset, device):
         'stock_indices': torch.cat(all_stock_indices)  # shape (total_samples, num_stocks_per_date)
     }
 
+def plot_results(test_results, data_dir):
+    """Plot results from model evaluation.
+    
+    Args:
+        test_results (dict): Dictionary containing predictions, confidences, returns, dates, and metrics
+        data_dir (Path): Directory to save plots
+    """
+    # 1. Portfolio Value Over Time
+    #fig = backtest_results.plot(open=False, high=False, low=False, volume=False)[0][0]
+    #fig.savefig(data_dir / 'backtest_plot.png')
+    #    plt.close(fig)
+
+    # 2. Plot predicted vs actual returns scatter
+    plt.figure(figsize=(10, 10))
+    plt.scatter(test_results['returns'].flatten(), test_results['predictions'].flatten(), alpha=0.1)
+    plt.xlabel('Actual Returns')
+    plt.ylabel('Predicted Returns')
+    plt.title('Predicted vs Actual Returns')
+    plt.grid(True)
+    max_val = max(abs(plt.xlim()[0]), abs(plt.xlim()[1]))
+    plt.plot([-max_val, max_val], [-max_val, max_val], 'r--')  # Perfect prediction line
+    plt.tight_layout()
+    plt.savefig(data_dir / 'predicted_vs_actual.png')
+    plt.close()
+    
+    # 3. Plot prediction error distribution
+    errors = test_results['predictions'] - test_results['returns']
+    plt.figure(figsize=(10, 6))
+    plt.hist(errors.flatten(), bins=50)
+    plt.title('Distribution of Prediction Errors')
+    plt.xlabel('Prediction Error')
+    plt.ylabel('Count')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(data_dir / 'error_distribution.png')
+    plt.close()
 
 def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
-    """Load model, generate predictions, and evaluate trading strategy performance"""
+    """Load model from checkpoint and evaluate its performance on test data.
+    
+    Generates predictions on test data, calculates metrics, and creates visualization plots.
+    Results and plots are saved to the specified data directory.
+    
+    Args:
+        test_years (list): List of years to evaluate on
+        checkpoint_path (Path): Path to model checkpoint file
+        config_path (Path): Path to model configuration JSON file
+        data_dir (Path): Directory to save evaluation results and plots
+        
+    Saves:
+        - evaluation_results.npz: Contains predictions, confidences, returns, dates, and metrics
+        - predicted_vs_actual.png: Scatter plot of predicted vs actual returns
+        - error_distribution.png: Histogram of prediction errors
+    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Load the preprocessed datasets and metadata
@@ -132,35 +208,7 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
         sp500_by_year
     )
     
-    # 1. Portfolio Value Over Time
-    #fig = backtest_results.plot(open=False, high=False, low=False, volume=False)[0][0]
-    #fig.savefig(data_dir / 'backtest_plot.png')
-    #    plt.close(fig)
-
-    # 3. Plot predicted vs actual returns scatter
-    plt.figure(figsize=(10, 10))
-    plt.scatter(test_results['returns'].flatten(), test_results['predictions'].flatten(), alpha=0.1)
-    plt.xlabel('Actual Returns')
-    plt.ylabel('Predicted Returns')
-    plt.title('Predicted vs Actual Returns')
-    plt.grid(True)
-    max_val = max(abs(plt.xlim()[0]), abs(plt.xlim()[1]))
-    plt.plot([-max_val, max_val], [-max_val, max_val], 'r--')  # Perfect prediction line
-    plt.tight_layout()
-    plt.savefig(data_dir / 'predicted_vs_actual.png')
-    plt.close()
-    
-    # 4. Plot prediction error distribution
-    errors = test_results['predictions'] - test_results['returns']
-    plt.figure(figsize=(10, 6))
-    plt.hist(errors.flatten(), bins=50)
-    plt.title('Distribution of Prediction Errors')
-    plt.xlabel('Prediction Error')
-    plt.ylabel('Count')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(data_dir / 'error_distribution.png')
-    plt.close()
+    plot_results(test_results, data_dir)
 
 if __name__ == "__main__":
     test_years = [2023]

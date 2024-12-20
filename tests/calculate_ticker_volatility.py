@@ -58,7 +58,7 @@ if __name__ == "__main__":
     volatility = calculate_ticker_volatility(data_dir, start_year, end_year)
     
     # Print results sorted by volatility (highest to lowest)
-    print("\nnTicker Volatilities (sorted low to high):")
+    print("\nTicker Volatilities (sorted low to high):")
     print(volatility)
     
     # Optionally save to CSV

@@ -8,6 +8,23 @@ from nscan import NSCAN, confidence_weighted_loss
 from nscan.utils import collate_fn
 
 class Trainer:
+    """A trainer class for the NSCAN (Neural Stock Correlation Analysis Network) model.
+    
+    This class handles the training loop, validation, checkpointing, and metric logging
+    for the NSCAN model. It supports mixed precision training, gradient scaling, and 
+    distributed training through Ray.
+    
+    Attributes:
+        config (dict): Configuration dictionary containing model and training parameters
+        device (str): Device to run training on ('cuda' or 'cpu')
+        model (NSCAN): The NSCAN model instance
+        train_loader (DataLoader): DataLoader for training data
+        val_loader (DataLoader): DataLoader for validation data
+        optimizer (torch.optim.Optimizer): The optimizer instance
+        scheduler (torch.optim.lr_scheduler): Learning rate scheduler
+        scaler (GradScaler): Gradient scaler for mixed precision training
+        wandb: Optional Weights & Biases logger
+    """
     def __init__(
         self,
         config,
@@ -92,7 +109,15 @@ class Trainer:
             self.wandb = wandb
         
     def move_batch(self, batch):
-        # Move to device
+        """Moves a batch of data to the appropriate device.
+        
+        Args:
+            batch (dict): Dictionary containing batch data with keys:
+                'input_ids', 'attention_mask', 'stock_indices', 'returns'
+                
+        Returns:
+            dict: The same batch dictionary with all tensors moved to self.device
+        """
         return {
             'input_ids': batch['input_ids'].to(self.device),
             'attention_mask': batch['attention_mask'].to(self.device),
@@ -101,6 +126,20 @@ class Trainer:
         }
         
     def train_epoch(self):
+        """Trains the model for one epoch.
+        
+        Performs training loop over all batches in train_loader, including:
+        - Forward pass with mixed precision
+        - Loss calculation
+        - Backward pass with gradient scaling
+        - Optimization step
+        - Periodic validation
+        - Checkpoint saving
+        - Metric logging
+        
+        Returns:
+            float: Average training loss for the epoch
+        """
         self.model.train()
         total_loss = 0
         num_batches = len(self.train_loader)
@@ -182,7 +221,17 @@ class Trainer:
             
         return total_loss / len(self.train_loader)
     
-    def validate(self, full_validation=False, num_batches=100):  # num_batches default can be adjusted
+    def validate(self, full_validation=False, num_batches=100):
+        """Evaluates the model on validation data.
+        
+        Args:
+            full_validation (bool): If True, validate on entire validation set.
+                                  If False, validate on random subset of batches.
+            num_batches (int): Number of batches to use when full_validation=False
+            
+        Returns:
+            float: Average validation loss
+        """
         self.model.eval()
         total_loss = 0
         
@@ -222,6 +271,16 @@ class Trainer:
         return total_loss / divisor
     
     def train(self):
+        """Executes the full training loop for the specified number of epochs.
+        
+        For each epoch:
+        - Performs training on all batches
+        - Runs full validation
+        - Updates learning rate scheduler
+        - Saves checkpoints
+        - Logs metrics
+        - Prints progress
+        """
         best_val_loss = float('inf')
         self.current_epoch = 0
         

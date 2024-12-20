@@ -9,6 +9,13 @@ from nscan.utils.data import load_preprocessed_datasets
 from nscan.config import PREPROCESSED_DATA_DIR, RESULTS_DIR, CACHE_DIR, CHECKPOINT_DIR
 
 def main():
+    """
+    Main function for hyperparameter tuning using Ray Tune.
+    
+    Performs distributed hyperparameter optimization for the stock prediction model using
+    the ASHA scheduler and HyperOpt search algorithm. Integrates with Weights & Biases
+    for experiment tracking.
+    """
     import ray
 
     # For HPC
@@ -67,6 +74,29 @@ def main():
 
     # Define train_model function for Ray Tune
     def train_model(config):
+        """
+        Training function for a single trial in the hyperparameter search.
+        
+        Args:
+            config (dict): Hyperparameter configuration for the trial, including:
+                - num_decoder_layers (int): Number of transformer decoder layers
+                - num_heads (int): Number of attention heads
+                - num_pred_layers (int): Number of prediction layers
+                - attn_dropout (float): Attention dropout rate
+                - ff_dropout (float): Feed-forward dropout rate
+                - encoder_name (str): Name of the pretrained encoder
+                - lr (float): Learning rate
+                - weight_decay (float): Weight decay coefficient
+                - batch_size (int): Training batch size
+                - max_length (int): Maximum sequence length
+                - num_stocks (int): Number of stocks in the dataset
+                - num_epochs (int): Number of training epochs
+                - validation_freq (int): Frequency of validation steps
+                - use_flash (bool): Whether to use flash attention
+        
+        Returns:
+            dict: Dictionary containing training metrics including validation loss
+        """
         train_dataset = ray.get(train_dataset_ref)
         val_dataset = ray.get(val_dataset_ref)
 

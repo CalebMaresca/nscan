@@ -11,6 +11,15 @@ from nscan.config import RETURNS_DATA_DIR, RAW_DATA_DIR, PREPROCESSED_DATA_DIR, 
 
 
 def clean_duplicates(file_path):
+    """
+    Remove duplicate rows from a CSV file and save the cleaned data back to the same file.
+    
+    Args:
+        file_path: Path to the CSV file to clean
+        
+    Returns:
+        None
+    """
     print(f"Cleaning {file_path}...")
     
     # Read the data
@@ -33,6 +42,18 @@ def clean_duplicates(file_path):
     print(f"Saved cleaned data to {file_path}")
 
 def create_process_function(returns_by_year, year_stock_indices, tokenizer, max_length=512):
+    """
+    Create a processing function for batched article data preprocessing.
+    
+    Args:
+        returns_by_year: Dict mapping years to DataFrames containing stock returns
+        year_stock_indices: Dict mapping years to lists of stock indices
+        tokenizer: HuggingFace tokenizer instance
+        max_length: Maximum sequence length for tokenization (default: 512)
+        
+    Returns:
+        function: A processing function that takes a batch of articles and returns processed features
+    """
     def process_batch(batch):
         processed_data = {
             'input_ids': [],
@@ -89,49 +110,6 @@ def create_process_function(returns_by_year, year_stock_indices, tokenizer, max_
 
     return process_batch
 
-def preprocess_in_chunks(articles_dataset, process_batch, chunk_size=100000, temp_dir="/tmp/processing"):
-    os.makedirs(temp_dir, exist_ok=True)
-    total_len = len(articles_dataset)
-    chunk_paths = []
-    
-    print(f"Processing {total_len} articles in chunks of {chunk_size}")
-    
-    for i in range(0, total_len, chunk_size):
-        print(f"\nProcessing chunk {i//chunk_size + 1}/{(total_len+chunk_size-1)//chunk_size}")
-        
-        # Process chunk
-        chunk = articles_dataset.select(range(i, min(i + chunk_size, total_len)))
-        processed_chunk = chunk.map(
-            process_batch,
-            batched=True,
-            batch_size=100,
-            remove_columns=chunk.column_names,
-            num_proc=4,
-            desc=f"Processing articles {i}-{min(i + chunk_size, total_len)}"
-        )
-        
-        # Save chunk to disk
-        chunk_path = os.path.join(temp_dir, f"chunk_{i}.dataset")
-        processed_chunk.save_to_disk(chunk_path)
-        chunk_paths.append(chunk_path)
-        
-        # Clear memory
-        del chunk
-        del processed_chunk
-        gc.collect()
-    
-    print("\nCombining chunks...")
-    # Load and combine all chunks
-    all_chunks = [Dataset.load_from_disk(path) for path in chunk_paths]
-    final_dataset = concatenate_datasets(all_chunks)
-    
-    print("Cleaning up temporary files...")
-    # Clean up temporary files
-    for path in chunk_paths:
-        shutil.rmtree(path)
-    
-    return final_dataset
-
 def preprocess_and_save(
     articles_dataset,
     returns_by_year,
@@ -142,6 +120,22 @@ def preprocess_and_save(
     save_dir,
     max_length=512
 ):
+    """
+    Preprocess article dataset and save train/validation/test splits.
+    
+    Args:
+        articles_dataset: Dataset containing articles to process
+        returns_by_year: Dict mapping years to DataFrames containing stock returns
+        sp500_by_year: Dict mapping years to lists of S&P 500 symbols
+        tokenizer: HuggingFace tokenizer instance
+        val_start_year: Year to start validation split
+        test_start_year: Year to start test split
+        save_dir: Directory to save processed datasets
+        max_length: Maximum sequence length for tokenization (default: 512)
+        
+    Returns:
+        None
+    """
     print("Starting preprocessing...", flush=True)
     
     # Create master list of all unique stocks

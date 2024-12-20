@@ -5,28 +5,24 @@ from typing import Tuple
 from .multihead_diff_2 import MultiheadDiff2
 
 
-class StockSelectionHead(nn.Module):
-    """Assigns logits to each stock based on relevance to the input text."""
-    def __init__(self, hidden_dim: int, num_stocks: int):
-        super().__init__()
-        self.linear1 = nn.Linear(hidden_dim, 4 * hidden_dim)
-        self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(4 * hidden_dim, num_stocks)
-        
-    def forward(self, cls_token: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            cls_token: Tensor of shape (batch_size, hidden_dim)
-        Returns:
-            logits: Tensor of shape (batch_size, num_stocks)
-        """
-        x = self.linear1(cls_token)
-        x = self.relu(x)
-        logits = self.linear2(x)
-        return logits
-
 class CustomDecoderLayer(nn.Module):
-    """Modified transformer decoder layer with cross-attention before self-attention."""
+    """Modified transformer decoder layer with cross-attention before self-attention.
+    
+    This layer differs from standard transformer decoders by applying cross-attention
+    to the encoded text before self-attention between stocks. This architecture choice
+    helps stocks first gather relevant information from the text before interacting
+    with each other.
+
+    Additionally, it uses differential attention for improved performance.
+    
+    Args:
+        hidden_dim (int): Dimension of the input embeddings
+        num_heads (int): Number of attention heads
+        depth (int): Position of this layer in the decoder stack (used for initialization)
+        attn_dropout (float, optional): Dropout rate for attention. Defaults to 0.1
+        ff_dropout (float, optional): Dropout rate for feed-forward layers. Defaults to 0.1
+        use_flash (bool, optional): Whether to use flash attention. Defaults to True
+    """
     def __init__(self, hidden_dim: int, num_heads: int, depth: int, attn_dropout: float = 0.1, ff_dropout: float = 0.1, use_flash: bool = True):
         super().__init__()
         
@@ -99,7 +95,20 @@ class CustomDecoderLayer(nn.Module):
         return x
 
 class StockDecoder(nn.Module):
-    """Full decoder with multiple layers."""
+    """Full decoder stack for processing stock embeddings with text context.
+    
+    Consists of multiple CustomDecoderLayers that iteratively refine stock
+    representations using both text information (cross-attention) and
+    inter-stock relationships (self-attention).
+    
+    Args:
+        num_layers (int): Number of decoder layers to stack
+        hidden_dim (int): Dimension of the input embeddings
+        num_heads (int): Number of attention heads per layer
+        attn_dropout (float, optional): Dropout rate for attention. Defaults to 0.1
+        ff_dropout (float, optional): Dropout rate for feed-forward layers. Defaults to 0.1
+        use_flash (bool, optional): Whether to use flash attention. Defaults to True
+    """
     def __init__(
         self,
         num_layers: int,
@@ -135,27 +144,61 @@ class StockDecoder(nn.Module):
         return x
 
 def create_predictor(input_dim: int, num_layers: int, ff_dropout: float) -> nn.Sequential:
-            layers = []
-            # First layer
-            layers.extend([
-                nn.Linear(input_dim, 4 * input_dim),
-                nn.GELU(),
-                nn.Dropout(ff_dropout)
-            ])
-            # Middle layers
-            for _ in range(num_layers - 2):
-                layers.extend([
-                    nn.Linear(4 * input_dim, 4 * input_dim),
-                    nn.GELU(),
-                    nn.Dropout(ff_dropout)
-                ])
-            # Final layer
-            layers.append(nn.Linear(4 * input_dim, 1))
-            return nn.Sequential(*layers)
+    """Creates a multi-layer perceptron for prediction tasks.
+    
+    Constructs a deep neural network with residual connections and dropout
+    for predicting either returns or confidence scores.
+    
+    Args:
+        input_dim (int): Dimension of input features
+        num_layers (int): Number of hidden layers
+        ff_dropout (float): Dropout rate for regularization
+        
+    Returns:
+        nn.Sequential: The constructed MLP
+    """
+    layers = []
+    # First layer
+    layers.extend([
+        nn.Linear(input_dim, 4 * input_dim),
+        nn.GELU(),
+        nn.Dropout(ff_dropout)
+    ])
+    # Middle layers
+    for _ in range(num_layers - 2):
+        layers.extend([
+            nn.Linear(4 * input_dim, 4 * input_dim),
+            nn.GELU(),
+            nn.Dropout(ff_dropout)
+        ])
+    # Final layer
+    layers.append(nn.Linear(4 * input_dim, 1))
+    return nn.Sequential(*layers)
 
 
 class NSCAN(nn.Module):
-    """Model that predicts returns for all stocks along with confidence scores."""
+    """News-Stock Cross-Attention Network for multi-stock prediction.
+    
+    This model combines a pretrained language model with a custom decoder 
+    architecture to predict stock returns based on financial news articles.
+    
+    Attributes:
+        encoder: Pretrained language model for processing news text
+        stock_embeddings: Learnable embeddings for each stock
+        decoder: Custom transformer decoder for cross-attention
+        return_predictor: MLP for predicting returns
+        confidence_predictor: MLP for predicting confidence scores
+        
+    Args:
+        num_stocks (int): Total number of unique stocks in dataset
+        num_decoder_layers (int): Number of transformer decoder layers
+        num_heads (int): Number of attention heads in decoder
+        num_pred_layers (int): Number of layers in prediction MLPs
+        attn_dropout (float, optional): Dropout rate for attention. Defaults to 0.1
+        ff_dropout (float, optional): Dropout rate for feedforward layers. Defaults to 0.1
+        use_flash (bool, optional): Whether to use flash attention. Defaults to True
+        encoder_name (str, optional): HuggingFace model name. Defaults to "FinText/FinText-Base-2007"
+    """
     def __init__(
         self,
         num_stocks: int,
@@ -250,6 +293,10 @@ def confidence_weighted_loss(predictions: torch.Tensor,
                            confidences: torch.Tensor) -> torch.Tensor:
     """
     Compute confidence-weighted MSE loss.
+
+    This loss function weights the squared error for each prediction by the model's
+    confidence in that prediction. This allows the model to learn to assign higher
+    confidence to predictions it can make more accurately.
     
     Args:
         predictions: Predicted returns (batch_size, num_stocks)
@@ -258,6 +305,11 @@ def confidence_weighted_loss(predictions: torch.Tensor,
     
     Returns:
         loss: Weighted MSE loss
+
+    Note:
+    - Expects confidences to sum to 1.0 across stocks for each batch
+    - Includes safety checks for NaN values and extreme predictions
+    - Clips predictions and targets to [-100, 100] range
     """
 
     # Check for NaN inputs
@@ -371,3 +423,33 @@ class NSCAN_old(nn.Module):
         predictions = self.predictor(decoded_stocks).squeeze(-1)  # (batch_size, k)
         
         return predictions, stock_logits
+    
+    class StockSelectionHead(nn.Module):
+        """Assigns logits to each stock based on relevance to the input text.
+        
+        A simple feed-forward network that takes the CLS token embedding and outputs
+        logits for each stock, representing their relevance to the input text.
+
+        Used in the older NSCAN model.
+        
+        Args:
+            hidden_dim (int): Dimension of the input embeddings
+            num_stocks (int): Total number of stocks to score
+    """
+        def __init__(self, hidden_dim: int, num_stocks: int):
+            super().__init__()
+            self.linear1 = nn.Linear(hidden_dim, 4 * hidden_dim)
+            self.relu = nn.ReLU()
+            self.linear2 = nn.Linear(4 * hidden_dim, num_stocks)
+            
+        def forward(self, cls_token: torch.Tensor) -> torch.Tensor:
+            """
+            Args:
+                cls_token: Tensor of shape (batch_size, hidden_dim)
+            Returns:
+                logits: Tensor of shape (batch_size, num_stocks)
+            """
+            x = self.linear1(cls_token)
+            x = self.relu(x)
+            logits = self.linear2(x)
+            return logits
