@@ -2,7 +2,7 @@
 
 NSCAN is a novel deep learning model for predicting multiple stock returns simultaneously using financial news data and cross-attention mechanisms. Unlike traditional approaches that predict returns for individual stocks in isolation, our model captures cross-asset relationships and market interactions.
 
-<img src="NSCAN-architecture.jpg" width="40%" alt="NSCAN Architecture">
+<img src="NSCAN-architecture.jpg" width="60%" alt="NSCAN Architecture">
 
 ## Features
 
@@ -65,7 +65,7 @@ __NOTE:__ This project is in early stages of development.
 
 ## Citation
 
-bibtex
+```bibtex
 @misc{maresca2024nscan,
 author = {Maresca, Caleb and Asati, Nishant},
 title = {NSCAN: News-Stock Cross-Attention Network},
@@ -73,7 +73,10 @@ year = {2024},
 publisher = {GitHub},
 url = {https://github.com/calebmaresca/nscan}
 }
+```
 
 ## Acknowledgments
 
 This project builds on the Differential Transformer implementation from [microsoft/unilm](https://github.com/microsoft/unilm/tree/master/diff-transformer), which was introduced in the paper ["Differential Transformer: A New Architecture for Efficient Language Understanding"](https://arxiv.org/abs/2410.05258).
+
+We use a pretrained encoder from [FinText](https://fintext.ai/), which was introduced in the paper ["Re(Visiting) Large Language Models in Finance"](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4963618).
