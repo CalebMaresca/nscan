@@ -1,9 +1,9 @@
-import os
 import backtrader as bt
 from collections import defaultdict
 import math
 import pandas as pd
 import torch
+from nscan.config import PREPROCESSED_DATA_DIR
 
 class NewsBasedStrategy(bt.Strategy):
     params = (
@@ -99,7 +99,7 @@ class ReturnsData(bt.feeds.PandasData):
         return ret
 
 def run_backtest(test_results, returns_by_year, sp500_by_year):
-    metadata = torch.load('data/preprocessed_datasets/metadata.pt')
+    metadata = torch.load(PREPROCESSED_DATA_DIR / "metadata.pt")
     idx_to_symbol = {idx: symbol for symbol, idx in metadata['symbol_to_idx'].items()}
 
     # Create a cerebro instance

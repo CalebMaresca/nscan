@@ -1,4 +1,5 @@
 import numpy as np
+from nscan.config import DATA_DIR
 
 def display_npz_contents(file_path):
     """
@@ -39,5 +40,5 @@ def display_npz_contents(file_path):
                 print(array)
 
 # Example usage
-file_path = "data/evaluation_results.npz"
+file_path = DATA_DIR / "evaluation_results.npz"
 display_npz_contents(file_path)

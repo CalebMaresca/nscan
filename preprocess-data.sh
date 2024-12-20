@@ -8,9 +8,6 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:0
 
-# Set working directory to project root (where src/ is)
-cd $HOME/DL_Systems/nscan
-
 # Set cache directory for huggingface
 export HF_HOME=/scratch/$USER/huggingface_cache
 
@@ -18,7 +15,7 @@ export HF_HOME=/scratch/$USER/huggingface_cache
 mkdir -p $HF_HOME
 
 singularity exec \
-    --overlay $SCRATCH/DL_Systems/project/overlay-25GB-500K.ext3:r \
+    --overlay nscan-overlay.sqf:ro \
     /scratch/work/public/singularity/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif \
     /bin/bash << 'ENDOFCOMMANDS'
 

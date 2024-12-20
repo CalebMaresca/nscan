@@ -6,25 +6,17 @@ from ray.tune.search.hyperopt import HyperOptSearch
 from ray.air.integrations.wandb import WandbLoggerCallback
 from nscan.training.trainer import Trainer
 from nscan.utils.data import load_preprocessed_datasets
-
+from nscan.config import PREPROCESSED_DATA_DIR, RESULTS_DIR, CACHE_DIR, CHECKPOINT_DIR
 
 def main():
     import ray
 
     # For HPC
     wandb_api_key = os.getenv("WANDB_API_KEY")
-    data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
-    ray_results_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/ray_results")
-    num_cpus_per_trial = 5
-    os.environ['HF_HOME'] = '/scratch/ccm7752/huggingface_cache'
-    os.makedirs('/scratch/ccm7752/huggingface_cache', exist_ok=True)
-    os.makedirs('/scratch/ccm7752/dataset_cache', exist_ok=True)
-
-    # For local
-    # data_dir = os.path.abspath("data/preprocessed_datasets")
-    # ray_results_dir = os.path.abspath("logs/ray_results")
-    # os.makedirs(ray_results_dir, exist_ok=True)
-    # num_cpus_per_trial = 8
+    data_dir = PREPROCESSED_DATA_DIR
+    ray_results_dir = RESULTS_DIR / "ray_results"
+    num_cpus_per_trial = 12
+    os.environ['HF_HOME'] = CACHE_DIR
 
     train_dataset, val_dataset, _, metadata = load_preprocessed_datasets(data_dir)
     
@@ -79,8 +71,7 @@ def main():
         val_dataset = ray.get(val_dataset_ref)
 
         trial_params = f"lrs{config['num_decoder_layers']}_heads{config['num_heads']}_predlrs{config['num_pred_layers']}attndrop{config['attn_dropout']:.2e}_ffdrop{config['ff_dropout']:.2e}_lr{config['lr']:.2e}_dec{config['weight_decay']:.2e}_bat{config['batch_size']}"
-        checkpoint_dir = os.path.join(os.environ['SCRATCH'], 'DL_Systems/project/checkpoints', 
-                                    f'trial_{trial_params}')
+        checkpoint_dir = CHECKPOINT_DIR / f'trial_{trial_params}'
 
         trainer = Trainer(
             config=config,

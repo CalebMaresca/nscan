@@ -1,10 +1,11 @@
 import os
-import ray
 from ray import train
 from ray.train.torch import TorchTrainer
 from ray.air.integrations.wandb import setup_wandb
 from nscan.utils.data import load_preprocessed_datasets
 from nscan.training.trainer import Trainer
+from nscan.config import PREPROCESSED_DATA_DIR, CHECKPOINT_DIR
+
 
 def train_func(config):
     """Training function to be executed in each worker"""
@@ -44,9 +45,6 @@ def train_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
     config["data_dir"] = data_dir
     config["load_checkpoint"] = load_checkpoint
 
-    # Get WandB API key from environment variable
-    wandb_api_key = os.getenv("WANDB_API_KEY")
-
     trainer = TorchTrainer(
         train_func,
         train_loop_config=config,
@@ -59,8 +57,9 @@ def train_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
     results = trainer.fit()
     return results
 
-def main():
+def main(load_checkpoint=None):
     # Configuration for single model training
+    # These hyperparameters were chosen based on the results of the hyperparameter tuning process
     config = {
         "num_decoder_layers": 4,
         "num_heads": 4,
@@ -75,12 +74,8 @@ def main():
         "use_flash": False
     }
     
-    # Setup paths
-    data_dir = os.path.join(os.environ.get('SCRATCH', 'data'), "DL_Systems/project/preprocessed_datasets")
-    checkpoint_dir = os.path.join(os.environ.get('SCRATCH', 'checkpoints'), "DL_Systems/project/single_model")
-    
     # Train model
-    train_model(config, data_dir, checkpoint_dir, load_checkpoint=None)
+    train_model(config, PREPROCESSED_DATA_DIR, CHECKPOINT_DIR, load_checkpoint=load_checkpoint)
 
 if __name__ == "__main__":
     main()

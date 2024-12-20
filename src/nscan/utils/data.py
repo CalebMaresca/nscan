@@ -1,6 +1,5 @@
 import torch
 from datasets import load_from_disk
-import os
 import pandas as pd
 
 class NewsReturnDataset(torch.utils.data.Dataset):
@@ -8,6 +7,7 @@ class NewsReturnDataset(torch.utils.data.Dataset):
         """
         Args:
             preprocessed_dataset: HF dataset with preprocessed articles
+            max_articles_per_day: Maximum number of articles to keep per day
         """
         self.articles = preprocessed_dataset
         if max_articles_per_day is not None:
@@ -44,7 +44,7 @@ class NewsReturnDataset(torch.utils.data.Dataset):
 def load_preprocessed_datasets(data_dir):
     # Load the preprocessed datasets
     dataset_dict = load_from_disk(data_dir)
-    metadata = torch.load(os.path.join(data_dir, 'metadata.pt'))
+    metadata = torch.load(data_dir / 'metadata.pt')
     
     # Create custom datasets
     train_dataset = NewsReturnDataset(dataset_dict['train'])
@@ -98,7 +98,7 @@ def load_returns_and_sp500_data(years, data_dir):
     
     for year in years:
         # Load returns DataFrame for this year
-        file_path = os.path.join(data_dir, f"{year}_returns.csv")
+        file_path = data_dir / f"{year}_returns.csv"
         df = pd.read_csv(file_path)
 
         # Check raw data before pivot

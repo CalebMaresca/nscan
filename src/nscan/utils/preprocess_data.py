@@ -7,6 +7,8 @@ from transformers import AutoTokenizer
 import gc
 import shutil
 from nscan.utils import load_returns_and_sp500_data
+from nscan.config import RETURNS_DATA_DIR, RAW_DATA_DIR, PREPROCESSED_DATA_DIR, CACHE_DIR
+
 
 def clean_duplicates(file_path):
     print(f"Cleaning {file_path}...")
@@ -27,7 +29,7 @@ def clean_duplicates(file_path):
     print(f"Removed {rows_removed} duplicate rows")
     
     # Save cleaned data
-    df.to_csv(os.path.join("data/returns", file_path), index=False)
+    df.to_csv(file_path, index=False)
     print(f"Saved cleaned data to {file_path}")
 
 def create_process_function(returns_by_year, year_stock_indices, tokenizer, max_length=512):
@@ -204,21 +206,19 @@ def preprocess_and_save(
         'max_length': max_length,
         'tokenizer_name': tokenizer.name_or_path
     }
-    torch.save(metadata, os.path.join(save_dir, 'metadata.pt'))
+    torch.save(metadata, save_dir / 'metadata.pt')
     
     print(f"Saved preprocessed datasets to {save_dir}")
     print(f"Split sizes: Train={len(train_dataset)}, Val={len(val_dataset)}, Test={len(test_dataset)}")
 
 if __name__ == "__main__":
     years = range(2006, 2024)
-    #data_dir = "/home/ccm7752/DL_Systems/nscan/data"
-    data_dir = "data"
 
     print("Script starting", flush=True)
 
     print("Cleaning duplicates...", flush=True)
     for year in years:
-        clean_duplicates(os.path.join(data_dir, "returns", f"{year}_returns.csv"))
+        clean_duplicates(RETURNS_DATA_DIR / f"{year}_returns.csv")
 
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained("FinText/FinText-Base-2007")
@@ -226,20 +226,19 @@ if __name__ == "__main__":
 
     # Load data
     print("Loading data...", flush=True)
-    returns_by_year, sp500_by_year = load_returns_and_sp500_data(years, os.path.join(data_dir, "returns"))
+    returns_by_year, sp500_by_year = load_returns_and_sp500_data(years, RETURNS_DATA_DIR)
     
-    articles_path = os.path.join(data_dir, "raw", "FNSPID-date-corrected.csv")
+    articles_path = RAW_DATA_DIR / "FNSPID-date-corrected.csv"
     articles_dataset = load_dataset(
         "csv", 
         data_files=articles_path, 
         split="train",
-        cache_dir='/scratch/ccm7752/dataset_cache'
+        cache_dir=CACHE_DIR
     )
     print("Data loaded! About to preprocess and save", flush=True)
 
     # Create save directory
-    #save_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/preprocessed_datasets")
-    save_dir = "data/preprocessed_datasets"
+    save_dir = PREPROCESSED_DATA_DIR
     os.makedirs(save_dir, exist_ok=True)
 
 

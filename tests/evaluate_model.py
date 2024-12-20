@@ -9,8 +9,11 @@ from datasets import load_from_disk
 from nscan.backtesting import run_backtest
 from nscan.utils import NewsReturnDataset, load_returns_and_sp500_data, collate_fn
 from nscan import NSCAN, confidence_weighted_loss
-import torch._dynamo
-torch._dynamo.config.suppress_errors = True
+from nscan.config import CHECKPOINT_DIR, DATA_DIR, PREPROCESSED_DATA_DIR
+
+# For use in environments where torch._dynamo is not available
+#import torch._dynamo
+#torch._dynamo.config.suppress_errors = True
 
 def move_batch(batch, device):
     # Move to device
@@ -77,7 +80,7 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Load the preprocessed datasets and metadata
-    dataset_dict = load_from_disk(os.path.join(data_dir, "preprocessed_datasets"))  # This loads the DatasetDict
+    dataset_dict = load_from_disk(PREPROCESSED_DATA_DIR)  # This loads the DatasetDict
     test_dataset = NewsReturnDataset(dataset_dict['test'], max_articles_per_day=4)  # Get the test split
 
     # Load checkpoint which contains model state
@@ -115,13 +118,12 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
         'test_loss': test_results['test_loss']
     }
     
-    save_path = os.path.join(data_dir, "evaluation_results.npz")
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    save_path = data_dir / "evaluation_results.npz"
     np.savez(save_path, **save_dict)
     print(f"Saved evaluation results to {save_path}")
 
     # Load returns data
-    returns_by_year, sp500_by_year = load_returns_and_sp500_data(test_years, os.path.join(data_dir, "returns"))
+    returns_by_year, sp500_by_year = load_returns_and_sp500_data(test_years, data_dir / "returns")
     
     # Run backtest
     backtest_results = run_backtest(
@@ -132,7 +134,7 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     
     # 1. Portfolio Value Over Time
     #fig = backtest_results.plot(open=False, high=False, low=False, volume=False)[0][0]
-    #fig.savefig(os.path.join(data_dir,'backtest_plot.png'))
+    #fig.savefig(data_dir / 'backtest_plot.png')
     #    plt.close(fig)
 
     # 3. Plot predicted vs actual returns scatter
@@ -145,7 +147,7 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     max_val = max(abs(plt.xlim()[0]), abs(plt.xlim()[1]))
     plt.plot([-max_val, max_val], [-max_val, max_val], 'r--')  # Perfect prediction line
     plt.tight_layout()
-    plt.savefig(os.path.join(data_dir, 'predicted_vs_actual.png'))
+    plt.savefig(data_dir / 'predicted_vs_actual.png')
     plt.close()
     
     # 4. Plot prediction error distribution
@@ -157,16 +159,13 @@ def run_model_evaluation(test_years, checkpoint_path, config_path, data_dir):
     plt.ylabel('Count')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(data_dir, 'error_distribution.png'))
+    plt.savefig(data_dir / 'error_distribution.png')
     plt.close()
 
 if __name__ == "__main__":
     test_years = [2023]
-    #checkpoint_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/epoch0_batch19999.pt")
-    #config_path = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/checkpoints/best_model/params.json")
-    #data_dir = os.path.join(os.environ['SCRATCH'], "DL_Systems/project/data")
-    checkpoint_path = os.path.abspath("checkpoints/best_model/epoch1_batch2999.pt")
-    config_path = os.path.abspath("checkpoints/best_model/params.json")
-    data_dir = os.path.abspath("data")
+    checkpoint_path = CHECKPOINT_DIR / "best_model/epoch1_batch2999.pt"
+    config_path = CHECKPOINT_DIR / "best_model/params.json"
+    data_dir = DATA_DIR
     
     run_model_evaluation(test_years, checkpoint_path, config_path, data_dir)

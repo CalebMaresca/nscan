@@ -16,7 +16,7 @@ echo "Running on node: $SLURMD_NODENAME"
 echo "Start time: $(date)"
 
 singularity exec --nv \
-    --overlay $SCRATCH/DL_Systems/project/overlay-25GB-500K.ext3:r \
+    --overlay nscan-overlay.sqf:ro \
     /scratch/work/public/singularity/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif \
     /bin/bash << 'ENDOFCOMMANDS'
 
@@ -24,10 +24,10 @@ source /ext3/env.sh
 conda activate py311
 
 # Set up wandb API key
-export WANDB_API_KEY=$(cat $SCRATCH/DL_Systems/project/.wandb_key)
+export WANDB_API_KEY=$(cat ./.wandb_key)
 
 # Create a directory for this run
-RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/tune/$SLURM_JOB_ID"
+RUN_DIR="./runs/tune/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
 # Run the training script and save the dashboard port

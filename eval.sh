@@ -16,7 +16,7 @@ echo "Running on node: $SLURMD_NODENAME"
 echo "Start time: $(date)"
 
 singularity exec --nv \
-    --overlay $SCRATCH/DL_Systems/project/overlay-25GB-500K.ext3:r \
+    --overlay nscan-overlay.sqf:ro \
     /scratch/work/public/singularity/cuda12.1.1-cudnn8.9.0-devel-ubuntu22.04.2.sif \
     /bin/bash << 'ENDOFCOMMANDS'
 
@@ -24,7 +24,7 @@ source /ext3/env.sh
 conda activate py311
 
 # Create a directory for this run
-RUN_DIR="$SCRATCH/DL_Systems/project/stock_pred_runs/eval/$SLURM_JOB_ID"
+RUN_DIR="./runs/eval/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
 python tests/evaluate_model.py 2>&1 | tee $RUN_DIR/eval.log

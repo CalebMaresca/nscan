@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from pathlib import Path
+from nscan.config import RETURNS_DATA_DIR
 
 def calculate_ticker_volatility(data_dir: str, start_year: int, end_year: int) -> pd.Series:
     """
@@ -19,8 +19,8 @@ def calculate_ticker_volatility(data_dir: str, start_year: int, end_year: int) -
     
     # Load and concatenate all yearly data
     for year in range(start_year, end_year + 1):
-        file_path = os.path.join(data_dir, f"{year}_returns.csv")
-        if not os.path.exists(file_path):
+        file_path = data_dir / f"{year}_returns.csv"
+        if not file_path.exists():
             print(f"Warning: File not found for year {year}")
             continue
             
@@ -51,7 +51,7 @@ def calculate_ticker_volatility(data_dir: str, start_year: int, end_year: int) -
 
 if __name__ == "__main__":
     # Example usage
-    data_dir = "data/returns"
+    data_dir = RETURNS_DATA_DIR
     start_year = 2006
     end_year = 2021
     
@@ -62,4 +62,4 @@ if __name__ == "__main__":
     print(volatility)
     
     # Optionally save to CSV
-    volatility.to_csv(os.path.join(data_dir, 'ticker_volatilities.csv'))
+    volatility.to_csv(data_dir / 'ticker_volatilities.csv')
