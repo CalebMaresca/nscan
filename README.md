@@ -2,7 +2,7 @@
 
 NSCAN is a novel deep learning model for predicting multiple stock returns simultaneously using financial news data and cross-attention mechanisms. Unlike traditional approaches that predict returns for individual stocks in isolation, our model captures cross-asset relationships and market interactions.
 
-![NSCAN Architecture](NSCAN-architecture.jpg)
+<img src="NSCAN-architecture.jpg" width="40%" alt="NSCAN Architecture">
 
 ## Features
 
