@@ -37,6 +37,7 @@ checkpoints/
 logs/
 *.pth
 *.ckpt
+tests/analyze_results.ipynb
 
 # Jupyter
 .ipynb_checkpoints
