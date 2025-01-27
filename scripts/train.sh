@@ -31,7 +31,7 @@ RUN_DIR="./runs/train/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
 # Run the training script and save the dashboard port
-python -m nscan.training.train_model 2>&1 | tee $RUN_DIR/train.log
+python training/train_model.py 2>&1 | tee $RUN_DIR/train.log
 
 ENDOFCOMMANDS
 

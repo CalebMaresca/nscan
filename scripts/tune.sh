@@ -31,7 +31,7 @@ RUN_DIR="./runs/tune/$SLURM_JOB_ID"
 mkdir -p $RUN_DIR
 
 # Run the training script and save the dashboard port
-python -m nscan.training.tune 2>&1 | tee $RUN_DIR/tune.log
+python training/tune.py 2>&1 | tee $RUN_DIR/tune.log
 
 ENDOFCOMMANDS
 
