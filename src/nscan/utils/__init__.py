@@ -1,11 +1,13 @@
-from .data import (
-    NewsReturnDataset,
-    collate_fn,
+from .data.dataset import NewsReturnDataset
+
+from .data.loading import (
     load_preprocessed_datasets,
     load_returns_and_sp500_data
 )
 
-from .preprocess_data import (
+from .data.collation import collate_fn
+
+from .preprocessing.preprocess_data import (
     preprocess_and_save,
     clean_duplicates
 )

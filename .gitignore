@@ -31,13 +31,14 @@ env/
 *.swo
 
 # Project specific
-data/
+/data/
 checkpoints/
 !data/raw/.gitkeep
 logs/
 *.pth
 *.ckpt
 tests/analyze_results.ipynb
+LexisNexus.py
 
 # Jupyter
 .ipynb_checkpoints

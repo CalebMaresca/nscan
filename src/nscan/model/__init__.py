@@ -1,6 +1,6 @@
-from .model import (
+from .nscan import (
     NSCAN,
-    confidence_weighted_loss
+    confidence_weighted_loss,
 )
 
 __all__ = [
