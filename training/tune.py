@@ -4,9 +4,10 @@ from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.hyperopt import HyperOptSearch
 from ray.air.integrations.wandb import WandbLoggerCallback
-from nscan.training.trainer import Trainer
+from trainer import Trainer
 from nscan.utils.data import load_preprocessed_datasets
 from nscan.config import PREPROCESSED_DATA_DIR, RESULTS_DIR, CACHE_DIR, CHECKPOINT_DIR
+from nscan.model.nscan import NSCANConfig
 
 def main():
     """
@@ -23,7 +24,7 @@ def main():
     data_dir = PREPROCESSED_DATA_DIR
     ray_results_dir = RESULTS_DIR / "ray_results"
     num_cpus_per_trial = 12
-    os.environ['HF_HOME'] = CACHE_DIR
+    os.environ['HF_HOME'] = str(CACHE_DIR)
 
     train_dataset, val_dataset, _, metadata = load_preprocessed_datasets(data_dir)
     
@@ -41,22 +42,23 @@ def main():
 
     # Define search space
     config = {
+        # Model config parameters
         "num_decoder_layers": tune.choice([2, 3, 4]),
         "num_heads": tune.choice([4, 6]),
         "num_pred_layers": tune.choice([2, 3, 4]),
         "attn_dropout": tune.uniform(0.1, 0.3),
         "ff_dropout": tune.uniform(0.1, 0.3),
         "encoder_name": metadata["tokenizer_name"],
+        "num_stocks": len(metadata["all_stocks"]),
+        "use_flash": False,
+        
+        # Training config parameters
         "lr": tune.loguniform(1e-5, 1e-3),
         "weight_decay": tune.loguniform(1e-6, 1e-4),
         "batch_size": tune.choice([128]),
-        "max_length": metadata["max_length"],  # Fixed
-        "num_stocks": len(metadata["all_stocks"]),
         "num_epochs": 1,  # Fixed
         "validation_freq": 100,
-        "use_flash": False
     }
-
     # Initialize ASHA scheduler
     scheduler = ASHAScheduler(
         metric="val_loss",
@@ -88,7 +90,6 @@ def main():
                 - lr (float): Learning rate
                 - weight_decay (float): Weight decay coefficient
                 - batch_size (int): Training batch size
-                - max_length (int): Maximum sequence length
                 - num_stocks (int): Number of stocks in the dataset
                 - num_epochs (int): Number of training epochs
                 - validation_freq (int): Frequency of validation steps
@@ -103,8 +104,29 @@ def main():
         trial_params = f"lrs{config['num_decoder_layers']}_heads{config['num_heads']}_predlrs{config['num_pred_layers']}attndrop{config['attn_dropout']:.2e}_ffdrop{config['ff_dropout']:.2e}_lr{config['lr']:.2e}_dec{config['weight_decay']:.2e}_bat{config['batch_size']}"
         checkpoint_dir = CHECKPOINT_DIR / f'trial_{trial_params}'
 
+        model_config = NSCANConfig(
+            num_decoder_layers=config["num_decoder_layers"],
+            num_heads=config["num_heads"],
+            num_pred_layers=config["num_pred_layers"],
+            attn_dropout=config["attn_dropout"],
+            ff_dropout=config["ff_dropout"],
+            encoder_name=config["encoder_name"],
+            num_stocks=config["num_stocks"],
+            use_flash=config["use_flash"]
+        )
+
+        # Create trainer config
+        trainer_config = {
+            "model_config": model_config,
+            "lr": config["lr"],
+            "weight_decay": config["weight_decay"],
+            "batch_size": config["batch_size"],
+            "num_epochs": config["num_epochs"],
+            "validation_freq": config["validation_freq"]
+        }
+
         trainer = Trainer(
-            config=config,
+            config=trainer_config,
             train_dataset=train_dataset,
             val_dataset=val_dataset,
             checkpoint_dir=checkpoint_dir
@@ -117,7 +139,7 @@ def main():
         config=config,
         scheduler=scheduler,
         search_alg=search_alg,
-        num_samples=8,  # Total trials
+        num_samples=1,  # Total trials
         resources_per_trial={"gpu": 1, "cpu": num_cpus_per_trial},
         callbacks=[WandbLoggerCallback(
             project="stock-predictor",

@@ -17,9 +17,9 @@ from ray import train
 from ray.train.torch import TorchTrainer
 from ray.air.integrations.wandb import setup_wandb
 from nscan.utils.data import load_preprocessed_datasets
-from nscan.training.trainer import Trainer
+from .trainer import Trainer
 from nscan.config import PREPROCESSED_DATA_DIR, CHECKPOINT_DIR
-
+from nscan.model.nscan import NSCANConfig
 
 def train_func(config):
     """Training function to be executed in each worker.
@@ -46,14 +46,7 @@ def train_func(config):
         project="stock-predictor"
     )
 
-    train_dataset, val_dataset, _, metadata = load_preprocessed_datasets(data_dir)
-    
-    # Update config with metadata
-    config.update({
-        "encoder_name": metadata["tokenizer_name"],
-        "max_length": metadata["max_length"],
-        "num_stocks": len(metadata["all_stocks"])
-    })
+    train_dataset, val_dataset, _, _ = load_preprocessed_datasets(data_dir)
     
     trainer = Trainer(
         config=config,
@@ -66,33 +59,6 @@ def train_func(config):
     
     return trainer.train()
 
-def train_model(config, data_dir, checkpoint_dir, load_checkpoint=None):
-    """Setup and launch distributed training using Ray Train.
-    
-    Args:
-        config (dict): Model and training configuration parameters
-        data_dir (str): Directory containing preprocessed training data
-        checkpoint_dir (str): Directory for saving model checkpoints
-        load_checkpoint (str, optional): Path to checkpoint to resume training from. Defaults to None.
-    
-    Returns:
-        ray.air.result.Result: Results object containing training metrics and final model state
-    """
-    # Add data_dir to config so it's available in training function
-    config["data_dir"] = data_dir
-    config["load_checkpoint"] = load_checkpoint
-
-    trainer = TorchTrainer(
-        train_func,
-        train_loop_config=config,
-        scaling_config=train.ScalingConfig(num_workers=4, use_gpu=True),  # Adjust number of workers as needed
-        run_config=train.RunConfig(
-            storage_path=checkpoint_dir
-        )
-    )
-    
-    results = trainer.fit()
-    return results
 
 def main(load_checkpoint=None):
     """Main entry point for model training.
@@ -103,22 +69,41 @@ def main(load_checkpoint=None):
     Args:
         load_checkpoint (str, optional): Path to checkpoint to resume training from. Defaults to None.
     """
-    config = {
-        "num_decoder_layers": 4,
-        "num_heads": 4,
-        "num_pred_layers": 4,
-        "attn_dropout": 0.25,
-        "ff_dropout": 0.2,
+
+    model_config = NSCANConfig(
+        num_decoder_layers= 4,
+        num_heads= 4,
+        num_pred_layers= 4,
+        attn_dropout= 0.25,
+        ff_dropout= 0.2,
+        encoder_name= "FinText/FinText-Base-2007",
+        num_stocks= 500,
+        use_flash= False
+    )
+
+    # Create trainer config
+    trainer_config = {
+        "model_config": model_config,
         "lr": 0.000036,
         "weight_decay": 1e-5,
         "batch_size": 64,
         "num_epochs": 5,
         "validation_freq": 1000,
-        "use_flash": False
+        "data_dir": PREPROCESSED_DATA_DIR,
+        "load_checkpoint": load_checkpoint
     }
     
     # Train model
-    train_model(config, PREPROCESSED_DATA_DIR, CHECKPOINT_DIR, load_checkpoint=load_checkpoint)
+    trainer = TorchTrainer(
+        train_func,
+        train_loop_config=trainer_config,
+        scaling_config=train.ScalingConfig(num_workers=4, use_gpu=True),  # Adjust number of workers as needed
+        run_config=train.RunConfig(
+            storage_path=CHECKPOINT_DIR
+        )
+    )
+
+    results = trainer.fit()
 
 if __name__ == "__main__":
     main()

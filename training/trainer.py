@@ -38,16 +38,7 @@ class Trainer:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
         # Initialize model
-        self.model = NSCAN(
-            num_stocks=config["num_stocks"],  # Total unique stocks
-            num_decoder_layers=config["num_decoder_layers"],
-            num_heads=config["num_heads"],
-            num_pred_layers=config["num_pred_layers"],
-            attn_dropout=config["attn_dropout"],
-            ff_dropout=config["ff_dropout"],
-            encoder_name=config["encoder_name"],
-            use_flash=config["use_flash"]
-        ).to(self.device)
+        self.model = NSCAN(config["model_config"]).to(self.device)
         
         self.model = torch.compile(self.model, mode='max-autotune-no-cudagraphs')
         
@@ -73,8 +64,6 @@ class Trainer:
             prefetch_factor=4,  # Number of batches loaded in advance by each worker
             persistent_workers=True  # Keep worker processes alive between epochs
         )
-
-        self.max_length = config["max_length"]
         
         # Initialize optimizer
         self.optimizer = torch.optim.AdamW(
