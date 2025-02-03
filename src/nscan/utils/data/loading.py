@@ -17,8 +17,14 @@ def load_preprocessed_datasets(data_dir):
             - metadata (dict): Dataset metadata
     """
     # Load the preprocessed datasets
-    dataset_dict = load_from_disk(data_dir)
-    metadata = torch.load(data_dir / 'metadata.pt')
+    try:
+        dataset_dict = load_from_disk(data_dir)
+        metadata = torch.load(data_dir / 'metadata.pt')
+    except Exception as e:
+        print(f"Error loading datasets with Path: {e}. Trying with str().")
+        # Fallback to using str() for loading
+        dataset_dict = load_from_disk(str(data_dir))
+        metadata = torch.load(str(data_dir / 'metadata.pt'))
     
     # Create custom datasets
     train_dataset = NewsReturnDataset(dataset_dict['train'])
